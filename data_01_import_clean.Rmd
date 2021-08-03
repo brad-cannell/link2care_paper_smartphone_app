@@ -1,0 +1,156 @@
+---
+title: "L2C Smartphone App Paper - Data Import and Cleaning"
+date: "2021-08-03 <br> Updated: `r Sys.Date()`"
+---
+
+
+# ⭐️Overview
+
+This file we important and clean data needed for the Link2Care smartphone app paper (still waiting on the title).
+
+2021-07-14, Jordan Neil:
+Paper examining prevalence and perceived utility of mHealth tech among RIHA
+
+A call may be helpful, but we might be able to progress with a simple output for both papers.
+
+Can you run a series of zero-order correlations between person-level characteristics and prevalence and perceived utility of mHealth?
+I don’t have the list of variable names, but I have attached a table with the list of constructs/items where unclear.
+Quick Q: For the item “Type of health related issue managed with smartphone apps” there is a “multiple” response category. Was this from a select all that apply approach that you recoded, or was “multiple” a response item on the survey?
+
+
+# 📦Load packages
+
+```{r message=FALSE}
+library(dplyr, warn.conflicts = FALSE)
+library(haven)
+```
+
+
+# 🌎Connect to UTH server 
+
+```{bash eval=FALSE}
+# Make sure you are connected to the VPN
+open 'smb://islgpcifs.uthouston.edu/sph_research/'
+```
+
+
+# 📥Import data 
+
+The group is only interested in baseline for now. Therefore, I'm importing the QDS visit 1 data only.
+
+```{r}
+v1 <- read_sav("/Volumes/sph_research/Link2Care/Participant Data/SPSS Data/raw_data/v1_data.SAV")
+```
+
+```{r}
+dim(v1) # 303 733
+```
+
+
+# 🚧Data management
+
+Keep variables of interest only
+
+```{r}
+v1 <- v1 %>% 
+  select(
+    id = SUBJECT, gender = GENDER, hispanic = SQ_2, race = SQ_3, age = SQ_4, 
+    have_mobile = SQ_12, have_data_plan = SQ_16, edu_20_cat = DEM5V1, 
+    employ_9_cat = DEM6V1, lifetime_homeless = BH1V1, lifetime_jail = BH17V1,
+    ment_health_treat = BH9V1, app_change = S41_V1, use_app = S42_V1, 
+    genhealth = HS1_V1, 
+  )
+```
+
+## Recode missing
+
+```{r}
+v1 <- v1 %>% 
+  mutate(
+    across(
+      .cols = c(app_change, use_app),
+      .fns  = ~ ifelse(.x %in% c(7, 8, 9), NA, .x)
+    )
+  )
+```
+
+## Factor variables
+
+```{r}
+ny_lab <- c("No", "Yes")
+```
+
+```{r}
+v1 <- v1 %>% 
+  mutate(
+    gender_f = factor(gender, 0:2, c("Male", "Female", "Other")),
+    hispanic_f = factor(hispanic, 0:1, ny_lab),
+    have_mobile_f = factor(have_mobile, 0:1, ny_lab),
+    have_data_plan_f = factor(
+      have_data_plan, 0:2, c("No", "Yes, limited", "Yes, Unlimited")
+    ),
+    ment_health_treat_f = factor(ment_health_treat, 0:1, ny_lab),
+    app_change_f = factor(app_change, 0:1, ny_lab),
+    use_app_f = factor(use_app, 0:1, ny_lab),
+    genhealth_f = factor(
+      genhealth, 1:5, c(
+        "Excellent", "Very Good", "Good", "Fair", "Poor"
+      )
+    )
+  )
+```
+
+## Recode variables
+
+```{r}
+v1 <- v1 %>% 
+  mutate(
+    
+    # Race ethnicity
+    race_eth_4_cat = case_when(
+      is.na(hispanic) ~ NA_integer_, # Can't categorize at all
+      hispanic == 1 ~ 3L, # Hispanic, any race
+      is.na(race) ~ NA_integer_, # Non-Hispanic, but we don't know race
+      race == 2 ~ 1L, # White, non-Hispanic
+      race == 3 ~ 2L, # Black, non-Hispanic
+      TRUE ~ 4L # Other race, non-Hispanic
+    ),
+    race_eth_4_cat_f = factor(
+      race_eth_4_cat, 1:4, c(
+        "White, non-Hispanic", "Black, non-Hispanic", "Hispanic, any race",
+        "Other race, non-Hispanic"
+      )
+    ),
+    
+    # Education
+    high_school_grad = if_else(edu_20_cat < 12, 0, 1),
+    high_school_grad_f = factor(high_school_grad, 0:1, ny_lab),
+    
+    # Employment status
+    employ_5_cat = case_when(
+      is.na(employ_9_cat) ~ NA_integer_,
+      employ_9_cat %in% c(1, 2) ~ 1L, # Employed full or part time
+      employ_9_cat == 3 ~ 2L, # Unemployed, looking for work
+      employ_9_cat == 4 ~ 3L, # Unemployed, not looking for work
+      employ_9_cat == 8 ~ 4L, # Unable to work, disabled 
+      TRUE ~ 5L # Other
+    ),
+    employ_5_cat_f = factor(
+      employ_5_cat, 1:5, c(
+        "Employed", "Unemployed, looking for work", 
+        "Unemployed, not looking for work", "Unable to work or disabled",
+        "Other"
+      )
+    )
+  )
+```
+
+# 🗑Clean up
+
+```{r}
+rm(ny_lab)
+```
+
+```{r echo=FALSE}
+sessionInfo()
+```

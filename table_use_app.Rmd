@@ -1,0 +1,207 @@
+---
+title: "L2C Smartphone App Paper - Descriptive Table for the Use App question"
+date: "2021-08-03 <br> Updated: `r Sys.Date()`"
+---
+
+
+# ⭐️Overview
+
+In this file we create a descriptive table exploring the relationships between using a smartphone app to manage health-related uses and each of the following: sociodemographic background, lifetime homelessness, lifetime incarceration, physical and mental health, and access to a mobile phone and data plan.
+
+Do you believe that a smartphone app can help you to change your actions or behavior?
+0	=	No
+1	=	Yes
+7	=	Don't Know
+8	=	Refuse to Answer
+9	=	Not Applicable
+
+
+# 📦Load packages
+
+```{r message=FALSE}
+library(dplyr, warn.conflicts = FALSE)
+library(freqtables)
+library(meantables)
+library(purrr)
+library(officer)
+library(flextable,warn.conflicts = FALSE)
+```
+
+```{r}
+source("flextable_helpers.R")
+```
+
+
+# 📥Import data 
+
+Import and clean data using data_01_import_clean.Rmd
+
+```{r}
+source_rmd <- function(file, ...) {
+  tmp_file = tempfile(fileext=".R")
+  on.exit(unlink(tmp_file), add = TRUE)
+  knitr::purl(file, output=tmp_file)
+  source(file = tmp_file, ...)
+}
+```
+
+```{r}
+source_rmd("data_01_import_clean.Rmd")
+```
+
+```{r}
+dim(v1) # 303 29
+```
+
+
+# 🚧Data management
+
+Drop rows with missing outcome
+
+```{r}
+v1_use_app <- v1 %>%
+  filter(!is.na(use_app_f))
+```
+
+
+# 📈Analysis
+
+## Outcome distribution
+
+```{r}
+v1_use_app %>% 
+  freq_table(use_app_f)
+```
+
+## Create helper functions
+
+For calculating statistics of interest.
+
+### Categorical statistics
+
+```{r eval=FALSE}
+# For testing
+v1_use_app %>% 
+  freq_table(use_app_f, gender_f) %>% 
+  freq_format("percent_row (lcl_row - ucl_row)", digits = 0) %>% 
+  select(row_cat, col_var, col_cat, formatted_stats) %>% 
+  tidyr::pivot_wider(
+    names_from = "row_cat",
+    values_from = "formatted_stats"
+  ) %>% 
+  # Add blank row below
+  add_row(col_var = "", col_cat = "", No = "", Yes = "")
+```
+
+```{r}
+cat_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
+  .data %>% 
+    freq_table({{ .outcome }}, {{ .pred }}) %>% 
+    freq_format("percent_row (lcl_row - ucl_row)", digits = .digits) %>% 
+    select(row_cat, col_var, col_cat, formatted_stats) %>% 
+    tidyr::pivot_wider(
+      names_from = "row_cat",
+      values_from = "formatted_stats"
+    ) %>% 
+    # Add blank row below
+    add_row(col_var = "", col_cat = "", No = "", Yes = "")
+}
+
+# For testing
+#cat_stats_fn(v1_use_app, use_app_f, gender_f)
+```
+
+### Continuous statistics
+
+```{r eval=FALSE}
+# For testing
+v1_use_app %>% 
+  group_by(use_app_f) %>% 
+  mean_table(age) %>% 
+  freq_format("mean (lcl - ucl)", digits = 0) %>% 
+  select(response_var, group_cat, formatted_stats) %>% 
+  tidyr::pivot_wider(
+    names_from = "group_cat",
+    values_from = "formatted_stats"
+  ) %>% 
+  # Add blank row below
+  add_row(response_var = "", No = "", Yes = "")
+```
+
+```{r}
+cont_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
+  .data %>% 
+    group_by({{ .outcome }}) %>% 
+    mean_table({{ .pred }}) %>% 
+    freq_format("mean (lcl - ucl)", digits = .digits) %>% 
+    select(response_var, group_cat, formatted_stats) %>% 
+    tidyr::pivot_wider(
+      names_from = "group_cat",
+      values_from = "formatted_stats"
+    ) %>% 
+    # Add blank row below
+    add_row(response_var = "", No = "", Yes = "")
+}
+
+# For testing
+# cont_stats_fn(v1_use_app, use_app_f, age)
+```
+
+```{r}
+cat_cols <- quos(
+  gender_f, race_eth_4_cat_f, high_school_grad_f, employ_5_cat_f, genhealth_f,
+  ment_health_treat_f, have_mobile_f, have_data_plan_f, 
+)
+```
+
+```{r}
+cont_cols <- quos(age, lifetime_homeless, lifetime_jail)
+```
+
+```{r}
+map_df(
+  .x = cat_cols,
+  .f = ~ cat_stats_fn(v1_use_app, use_app_f, !! .x)
+)
+```
+```{r}
+table(v1$have_data_plan)
+```
+
+
+# Left off here. Have data plan has a ton of missing.
+
+
+```{r}
+# Loop over all categorical vars
+# t1_cat_stats_no <- 
+map_df(
+  cat_cols, 
+  function(x) {
+    v1 %>%
+      filter(screened_in == 1) %>% 
+      freq_table({{x}}) %>%
+      freq_format(recipe = "n (percent)", digits = 1) %>%
+      select(var, cat, formatted_stats) %>%
+      # Add a row with the var name only
+      add_row(var = quo_name(x), .before = 1) %>% 
+      # Add blank row below
+      add_row(var = "", cat = "", formatted_stats = "")
+  }
+) %>% 
+  # Drop the final empty row
+  slice(-n())
+```
+
+
+
+
+# 🗑Clean up
+
+```{r}
+rm(list = ls())
+```
+
+```{r echo=FALSE}
+sessionInfo()
+```
