@@ -87,7 +87,7 @@ v1 <- v1 %>%
     hispanic_f = factor(hispanic, 0:1, ny_lab),
     have_mobile_f = factor(have_mobile, 0:1, ny_lab),
     have_data_plan_f = factor(
-      have_data_plan, 0:2, c("No", "Yes, limited", "Yes, Unlimited")
+      have_data_plan, 0:2, c("No", "Yes, limited", "Yes, unlimited")
     ),
     ment_health_treat_f = factor(ment_health_treat, 0:1, ny_lab),
     app_change_f = factor(app_change, 0:1, ny_lab),

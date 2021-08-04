@@ -32,6 +32,14 @@ source("flextable_helpers.R")
 ```
 
 
+# 🌎Connect to UTH server 
+
+```{bash eval=FALSE}
+# Make sure you are connected to the VPN
+open 'smb://islgpcifs.uthouston.edu/sph_research/'
+```
+
+
 # 📥Import data 
 
 Import and clean data using data_01_import_clean.Rmd
@@ -84,13 +92,14 @@ For calculating statistics of interest.
 v1_use_app %>% 
   freq_table(use_app_f, gender_f) %>% 
   freq_format("percent_row (lcl_row - ucl_row)", digits = 0) %>% 
-  select(row_cat, col_var, col_cat, formatted_stats) %>% 
+  # Change col_var to var to make it easier to bind with cont stats later
+  select(row_cat, var = col_var, col_cat, formatted_stats) %>% 
   tidyr::pivot_wider(
     names_from = "row_cat",
     values_from = "formatted_stats"
   ) %>% 
   # Add blank row below
-  add_row(col_var = "", col_cat = "", No = "", Yes = "")
+  add_row(var = "", col_cat = "", No = "", Yes = "")
 ```
 
 ```{r}
@@ -98,17 +107,19 @@ cat_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
   .data %>% 
     freq_table({{ .outcome }}, {{ .pred }}) %>% 
     freq_format("percent_row (lcl_row - ucl_row)", digits = .digits) %>% 
-    select(row_cat, col_var, col_cat, formatted_stats) %>% 
+    # Change col_var to var to make it easier to bind with cont stats later
+    select(row_cat, var = col_var, col_cat, formatted_stats) %>% 
     tidyr::pivot_wider(
       names_from = "row_cat",
       values_from = "formatted_stats"
     ) %>% 
     # Add blank row below
-    add_row(col_var = "", col_cat = "", No = "", Yes = "")
+    add_row(var = "", col_cat = "", No = "", Yes = "")
 }
 
 # For testing
-#cat_stats_fn(v1_use_app, use_app_f, gender_f)
+# cat_stats_fn(v1_use_app, use_app_f, gender_f)
+# cat_stats_fn(v1_use_app, use_app_f, !!sym("gender_f"))
 ```
 
 ### Continuous statistics
@@ -119,13 +130,14 @@ v1_use_app %>%
   group_by(use_app_f) %>% 
   mean_table(age) %>% 
   freq_format("mean (lcl - ucl)", digits = 0) %>% 
-  select(response_var, group_cat, formatted_stats) %>% 
+  # Change response_var to var to make it easier to bind with cat stats later
+  select(var = response_var, group_cat, formatted_stats) %>% 
   tidyr::pivot_wider(
     names_from = "group_cat",
     values_from = "formatted_stats"
   ) %>% 
   # Add blank row below
-  add_row(response_var = "", No = "", Yes = "")
+  add_row(var = "", No = "", Yes = "")
 ```
 
 ```{r}
@@ -134,64 +146,102 @@ cont_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
     group_by({{ .outcome }}) %>% 
     mean_table({{ .pred }}) %>% 
     freq_format("mean (lcl - ucl)", digits = .digits) %>% 
-    select(response_var, group_cat, formatted_stats) %>% 
+    # Change response_var to var to make it easier to bind with cat stats later
+    select(var = response_var, group_cat, formatted_stats) %>% 
     tidyr::pivot_wider(
       names_from = "group_cat",
       values_from = "formatted_stats"
     ) %>% 
     # Add blank row below
-    add_row(response_var = "", No = "", Yes = "")
+    add_row(var = "", No = "", Yes = "")
 }
 
 # For testing
 # cont_stats_fn(v1_use_app, use_app_f, age)
 ```
 
+## Create table
+
 ```{r}
-cat_cols <- quos(
-  gender_f, race_eth_4_cat_f, high_school_grad_f, employ_5_cat_f, genhealth_f,
-  ment_health_treat_f, have_mobile_f, have_data_plan_f, 
+cat_cols <- c(
+  "gender_f", "race_eth_4_cat_f", "high_school_grad_f", "employ_5_cat_f", "genhealth_f",
+  "ment_health_treat_f", "have_mobile_f", "have_data_plan_f" 
 )
 ```
 
+
 ```{r}
-cont_cols <- quos(age, lifetime_homeless, lifetime_jail)
+cont_cols <- c("age", "lifetime_homeless", "lifetime_jail")
 ```
 
 ```{r}
-map_df(
-  .x = cat_cols,
-  .f = ~ cat_stats_fn(v1_use_app, use_app_f, !! .x)
-)
-```
-```{r}
-table(v1$have_data_plan)
+cat_stats_list <- cat_cols %>%
+  set_names(cat_cols) %>% 
+  map(~ cat_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
 ```
 
+**NOTE:** The question about having a data plan has a ton of missing (77%). I dug into this a little more. It's because only 84 out of the 303 participants reported having a cell phone at all. In that light, 71 of those 84 (85%) responded to the question about having a data plan. These numbers will obviously change over time as we collect more data, but I imagine the proportions will remain relatively constant.
 
-# Left off here. Have data plan has a ton of missing.
-
+I could have dropped the row containing the NA responses directly inside of `cat_stats_fn` above, but I like that I was able to see all the missing and investigate it. Having said that, I don't think we need that row to appear in the final table. I'm going to drop it now. We can't just filter it out though, the percentages won't be correct.
 
 ```{r}
-# Loop over all categorical vars
-# t1_cat_stats_no <- 
-map_df(
-  cat_cols, 
-  function(x) {
-    v1 %>%
-      filter(screened_in == 1) %>% 
-      freq_table({{x}}) %>%
-      freq_format(recipe = "n (percent)", digits = 1) %>%
-      select(var, cat, formatted_stats) %>%
-      # Add a row with the var name only
-      add_row(var = quo_name(x), .before = 1) %>% 
-      # Add blank row below
-      add_row(var = "", cat = "", formatted_stats = "")
-  }
-) %>% 
-  # Drop the final empty row
-  slice(-n())
+cat_stats_list$have_data_plan_f <- v1_use_app %>% 
+  filter(!is.na(have_data_plan_f)) %>% 
+  cat_stats_fn(use_app_f, have_data_plan_f)
 ```
+
+```{r}
+cont_stats_list <- cont_cols %>% 
+  set_names(cont_cols) %>% 
+  map(~ cont_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
+```
+
+# Bind together categorical and continuous stats
+
+```{r}
+cont_stats_list$age %>% 
+  bind_rows(cat_stats_list$gender_f) %>% 
+  bind_rows(cat_stats_list$race_eth_4_cat_f) %>% 
+  bind_rows(cat_stats_list$high_school_grad_f) %>% 
+  bind_rows(cat_stats_list$employ_5_cat_f) %>% 
+  bind_rows(cat_stats_list$genhealth_f) %>% 
+  bind_rows(cat_stats_list$ment_health_treat_f) %>% 
+  bind_rows(cont_stats_list$lifetime_homeless) %>% 
+  bind_rows(cont_stats_list$lifetime_jail) %>% 
+  bind_rows(cat_stats_list$have_mobile_f) %>% 
+  bind_rows(cat_stats_list$have_data_plan_f)
+```
+
+# Left off here...
+
+
+This was works, but so much repetition. Let's add it to R Notes just in case. May even want to add using `set_names()` to name the list created by `map()` to the purrr chapter.
+
+https://stackoverflow.com/questions/43935160/use-input-of-purrrs-map-function-to-create-a-named-list-as-output-in-r
+
+Instead, I want use map_df, bind the data frames, and then sort var as a factor.
+
+https://stackoverflow.com/questions/26548495/reorder-rows-using-custom-order/26548692
+
+```{r}
+cat_stats <- cat_cols %>%
+  map_df(~ cat_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
+```
+
+```{r}
+cat_stats %>% 
+  muate(var = factor(var, ))
+```
+
+
+
+# Reorder the table
+
+Order the variable how you want them
+
+
+
+
 
 
 
