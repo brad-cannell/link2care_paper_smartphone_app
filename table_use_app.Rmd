@@ -8,7 +8,17 @@ date: "2021-08-03 <br> Updated: `r Sys.Date()`"
 
 In this file we create a descriptive table exploring the relationships between using a smartphone app to manage health-related uses and each of the following: sociodemographic background, lifetime homelessness, lifetime incarceration, physical and mental health, and access to a mobile phone and data plan.
 
-Do you believe that a smartphone app can help you to change your actions or behavior?
+The two main outcomes of interest are:
+
+Do you believe that a smartphone app can help you to change your actions or behavior? (v1_app_change)
+0	=	No
+1	=	Yes
+7	=	Don't Know
+8	=	Refuse to Answer
+9	=	Not Applicable
+
+
+Have you ever used a smartphone app to manage one or more health-related issues? (v1_use_app)
 0	=	No
 1	=	Yes
 7	=	Don't Know
@@ -20,6 +30,7 @@ Do you believe that a smartphone app can help you to change your actions or beha
 
 ```{r message=FALSE}
 library(dplyr, warn.conflicts = FALSE)
+library(readr)
 library(freqtables)
 library(meantables)
 library(purrr)
@@ -42,23 +53,14 @@ open 'smb://islgpcifs.uthouston.edu/sph_research/'
 
 # 📥Import data 
 
-Import and clean data using data_01_import_clean.Rmd
+This data is created and saved in data_01_import_clean.Rmd
 
 ```{r}
-source_rmd <- function(file, ...) {
-  tmp_file = tempfile(fileext=".R")
-  on.exit(unlink(tmp_file), add = TRUE)
-  knitr::purl(file, output=tmp_file)
-  source(file = tmp_file, ...)
-}
+v1 <- read_rds("/Volumes/sph_research/Link2Care/Statistical Projects/Montgomery - Smartphone/v1_clean.rds")
 ```
 
 ```{r}
-source_rmd("data_01_import_clean.Rmd")
-```
-
-```{r}
-dim(v1) # 303 29
+dim(v1) # 324  29
 ```
 
 
@@ -178,7 +180,9 @@ cont_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
 # cont_stats_fn(v1_use_app, use_app_f, age)
 ```
 
-## Create table
+## Create data frames of stats for tables
+
+Below, we create descriptive tables by v1_app_change and v1_use_app. 
 
 ```{r}
 cat_cols <- c(
@@ -187,15 +191,25 @@ cat_cols <- c(
 )
 ```
 
-
 ```{r}
 cont_cols <- c("age", "lifetime_homeless", "lifetime_jail")
 ```
 
-### app_change
+```{r}
+# Use this later to reorder the variables in the tables
+variable_order <- c(
+  "age", "gender_f", "race_eth_4_cat_f", "high_school_grad_f", "employ_5_cat_f", 
+  "genhealth_f", "ment_health_treat_f", "lifetime_homeless", "lifetime_jail",
+  "have_mobile_f", "have_data_plan_f"
+)
+```
+
+### app_change stats
+
+Calculate categorical stats for app_change
 
 ```{r}
-cat_stats_list <- cat_cols %>%
+stats_list_app_change <- cat_cols %>%
   set_names(cat_cols) %>% 
   map(~ cat_stats_fn(v1_app_change, app_change_f, !! sym(.x)))
 ```
@@ -205,85 +219,43 @@ cat_stats_list <- cat_cols %>%
 I could have dropped the row containing the NA responses directly inside of `cat_stats_fn` above, but I like that I was able to see all the missing and investigate it. Having said that, I don't think we need that row to appear in the final table. I'm going to drop it now. We can't just filter it out though, the percentages won't be correct.
 
 ```{r}
-cat_stats_list$have_data_plan_f <- v1_app_change %>% 
+stats_list_app_change$have_data_plan_f <- v1_app_change %>% 
+  # Remove rows for people with no data plan
   filter(!is.na(have_data_plan_f)) %>% 
+  # Calculate app_change by have data plan
   cat_stats_fn(app_change_f, have_data_plan_f)
 ```
 
-```{r}
-cont_stats_list <- cont_cols %>% 
-  set_names(cont_cols) %>% 
-  map(~ cont_stats_fn(v1_app_change, app_change_f, !! sym(.x)))
-```
-
-# Bind together categorical and continuous stats
+Calculate continuous stats for app_change and add them to the stats list
 
 ```{r}
-table <- bind_rows(
-  cont_stats_list$age, 
-  cat_stats_list$gender_f, 
-  cat_stats_list$race_eth_4_cat_f,
-  cat_stats_list$high_school_grad_f,
-  cat_stats_list$employ_5_cat_f,
-  cat_stats_list$genhealth_f,
-  cat_stats_list$ment_health_treat_f,
-  cont_stats_list$lifetime_homeless,
-  cont_stats_list$lifetime_jail,
-  cat_stats_list$have_mobile_f,
-  cat_stats_list$have_data_plan_f
+stats_list_app_change <- c(
+  stats_list_app_change,
+  cont_cols %>%
+    set_names(cont_cols) %>%
+    map(~ cont_stats_fn(v1_app_change, app_change_f, !! sym(.x)))
 )
 ```
 
+#### Bind together categorical and continuous stats
+
+For app_change
+
 ```{r}
-table <- table %>% 
-  select(var, col_cat, No, Yes)
+table_app_change <- map_dfr(
+  .x = variable_order,
+  .f = ~ bind_rows(stats_list_app_change[[.x]])
+) %>% 
+# Reorder columns
+select(var, col_cat, No, Yes)
 ```
 
+### use_app stats
 
-# 🔴 Automation and arranging column names
-
-Ran out of time. Come back and do this later. Add to R Notes.
-
-This was works, but so much repetition. Let's add it to R Notes just in case. May even want to add using `set_names()` to name the list created by `map()` to the purrr chapter.
-
-https://stackoverflow.com/questions/43935160/use-input-of-purrrs-map-function-to-create-a-named-list-as-output-in-r
-
-Instead, I want use map_df, bind the data frames, and then sort var as a factor.
-
-https://stackoverflow.com/questions/26548495/reorder-rows-using-custom-order/26548692
+Calculate categorical stats for app_change
 
 ```{r}
-# cat_stats <- cat_cols %>%
-#   map_df(~ cat_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
-```
-
-```{r}
-# cat_stats %>% 
-#   muate(var = factor(var, ))
-```
-
-# Create flextable
-
-```{r}
-table_ft <- flextable(table) %>% 
-  my_ft_theme() %>% 
-  autofit()
-```
-
-Output Word document for easy copy paste into template (DELETE)
-* Bold  total manually.
-
-```{r}
-read_docx() %>%
-  body_add_flextable(table_ft) %>% 
-  print("table_1_ft.docx")
-```
-
-
-### use_app
-
-```{r}
-cat_stats_list <- cat_cols %>%
+stats_list_use_app <- cat_cols %>%
   set_names(cat_cols) %>% 
   map(~ cat_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
 ```
@@ -293,94 +265,89 @@ cat_stats_list <- cat_cols %>%
 I could have dropped the row containing the NA responses directly inside of `cat_stats_fn` above, but I like that I was able to see all the missing and investigate it. Having said that, I don't think we need that row to appear in the final table. I'm going to drop it now. We can't just filter it out though, the percentages won't be correct.
 
 ```{r}
-cat_stats_list$have_data_plan_f <- v1_use_app %>% 
+stats_list_use_app$have_data_plan_f <- v1_use_app %>% 
+  # Remove rows for people with no data plan
   filter(!is.na(have_data_plan_f)) %>% 
+  # Calculate use_app by have data plan
   cat_stats_fn(use_app_f, have_data_plan_f)
 ```
 
-```{r}
-cont_stats_list <- cont_cols %>% 
-  set_names(cont_cols) %>% 
-  map(~ cont_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
-```
-
-# Bind together categorical and continuous stats
+Calculate continuous stats for use_ap and add them to the stats list
 
 ```{r}
-table <- bind_rows(
-  cont_stats_list$age, 
-  cat_stats_list$gender_f, 
-  cat_stats_list$race_eth_4_cat_f,
-  cat_stats_list$high_school_grad_f,
-  cat_stats_list$employ_5_cat_f,
-  cat_stats_list$genhealth_f,
-  cat_stats_list$ment_health_treat_f,
-  cont_stats_list$lifetime_homeless,
-  cont_stats_list$lifetime_jail,
-  cat_stats_list$have_mobile_f,
-  cat_stats_list$have_data_plan_f
+stats_list_use_app <- c(
+  stats_list_use_app,
+  cont_cols %>%
+    set_names(cont_cols) %>%
+    map(~ cont_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
 )
 ```
 
+#### Bind together categorical and continuous stats
+
+For use_app
+
 ```{r}
-table <- table %>% 
-  select(var, col_cat, No, Yes)
+table_use_app <- map_dfr(
+  .x = variable_order,
+  .f = ~ bind_rows(stats_list_use_app[[.x]])
+) %>% 
+# Reorder columns
+select(var, col_cat, No, Yes)
 ```
 
 
-# 🔴 Automation and arranging column names
+# Create flextables
 
-Ran out of time. Come back and do this later. Add to R Notes.
+All the stats are stored in data frames. Next, we will convert those data frames to flextables that we can add to our Word document template.
 
-This was works, but so much repetition. Let's add it to R Notes just in case. May even want to add using `set_names()` to name the list created by `map()` to the purrr chapter.
-
-https://stackoverflow.com/questions/43935160/use-input-of-purrrs-map-function-to-create-a-named-list-as-output-in-r
-
-Instead, I want use map_df, bind the data frames, and then sort var as a factor.
-
-https://stackoverflow.com/questions/26548495/reorder-rows-using-custom-order/26548692
+## app_change
 
 ```{r}
-# cat_stats <- cat_cols %>%
-#   map_df(~ cat_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
-```
-
-```{r}
-# cat_stats %>% 
-#   muate(var = factor(var, ))
-```
-
-# Create flextable
-
-```{r}
-table_ft <- flextable(table) %>% 
+table_app_change_ft <- flextable(table_app_change) %>% 
   my_ft_theme() %>% 
   autofit()
 ```
 
-Output Word document for easy copy paste into template (DELETE)
-* Bold  total manually.
+## use_app
+
+```{r}
+table_use_app_ft <- flextable(table_use_app) %>% 
+  my_ft_theme() %>% 
+  autofit()
+```
+
+Output Word document for easy copy paste into template. Ideally, this file will output fully formatted tables and add them to the Word document in the future. For now, I had to copy and paste the tables created below.
 
 ```{r}
 read_docx() %>%
-  body_add_flextable(table_ft) %>% 
-  print("table_2_ft.docx")
+  body_add_flextable(table_app_change_ft) %>% 
+  print("table_app_change_ft.docx")
 ```
-
-
-
-
-
-
-
-
-
-# 🗑Clean up
 
 ```{r}
-rm(list = ls())
+read_docx() %>%
+  body_add_flextable(table_use_app_ft) %>% 
+  print("table_use_app_ft.docx")
 ```
 
-```{r echo=FALSE}
-sessionInfo()
+
+# 📝Load Word template for officer
+
+Didn't get time to finish here and below. Ideally, this file will output fully formatted tables and add them to the Word document in the future. For now, I had to copy and paste the tables created above.
+
+```{r}
+# doc <- read_docx("template_descriptive_analysis.docx") %>% 
+#   body_replace_text_at_bkm("date", as.character(Sys.Date()))
 ```
+
+
+# 📌Generate Word reports
+
+```{r}
+# print(
+#   dts_report, 
+#   "docs/DTS Table Updates.docx"
+# )
+```
+

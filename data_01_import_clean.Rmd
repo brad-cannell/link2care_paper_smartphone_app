@@ -23,6 +23,7 @@ Quick Q: For the item “Type of health related issue managed with smartphone ap
 ```{r message=FALSE}
 library(dplyr, warn.conflicts = FALSE)
 library(haven)
+library(readr)
 ```
 
 
@@ -43,7 +44,7 @@ v1 <- read_sav("/Volumes/sph_research/Link2Care/Participant Data/SPSS Data/raw_d
 ```
 
 ```{r}
-dim(v1) # 303 733
+dim(v1) # 324 733
 ```
 
 
@@ -144,6 +145,28 @@ v1 <- v1 %>%
     )
   )
 ```
+
+
+# Export analysis data
+
+Export the analysis data as an SPSS data file for Michael and upload it to Kiteworks and the U drive.
+
+We also need to export and rds file to use for analysis in R. Otherwise, the factors are lost.
+
+```{r}
+write_sav(
+  v1, 
+  "/Volumes/sph_research/Link2Care/Statistical Projects/Montgomery - Smartphone/v1_clean.sav"
+)
+```
+
+```{r}
+write_rds(
+  v1, 
+  "/Volumes/sph_research/Link2Care/Statistical Projects/Montgomery - Smartphone/v1_clean.rds"
+)
+```
+
 
 # 🗑Clean up
 
