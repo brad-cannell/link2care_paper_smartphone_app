@@ -3,6 +3,10 @@ title: "L2C Smartphone App Paper - Descriptive Table for the Use App question"
 date: "2021-08-03 <br> Updated: `r Sys.Date()`"
 ---
 
+# Instructions
+
+Make any data updates you need to make in data_01_import_clean.Rmd. After that file has saved a new version of "/Volumes/sph_research/Link2Care/Statistical Projects/Montgomery - Smartphone/v1_clean.rds", you should just be able to click Run > Run All Chunks Below. This will create an updated Word document in the root directory called, "Smartphone Table Updates.docx".
+
 
 # ⭐️Overview
 
@@ -108,37 +112,55 @@ For calculating statistics of interest.
 ### Categorical statistics
 
 ```{r eval=FALSE}
-# For testing
+# For testing - slide categories to the left
 v1_use_app %>% 
   freq_table(use_app_f, gender_f) %>% 
-  freq_format("percent_row (lcl_row - ucl_row)", digits = 0) %>% 
+  freq_format("n (percent_row)", digits = 1) %>% 
   # Change col_var to var to make it easier to bind with cont stats later
   select(row_cat, var = col_var, col_cat, formatted_stats) %>% 
   tidyr::pivot_wider(
     names_from = "row_cat",
     values_from = "formatted_stats"
   ) %>% 
+  # Add two spaces in front of categories. This is to reduce the amount of 
+  # formatting we have to do in Word. The spaces won't be visible while testing
+  # in RStudio, but they will show up in the Word document
+  mutate(col_cat = paste0("  ", col_cat)) %>% 
+  # Add top row to contain the var name in the col_cat column. This is to 
+  # reduce the amount of formatting we have to do in Word. 
+  add_row(col_cat = "gender_f", .before = 1) %>% 
+  # Now drop var
+  select(-var, var = col_cat) %>% 
   # Add blank row below
-  add_row(var = "", col_cat = "", No = "", Yes = "")
+  add_row(var = "", No = "", Yes = "")
 ```
 
 ```{r}
 cat_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
   .data %>% 
     freq_table({{ .outcome }}, {{ .pred }}) %>% 
-    freq_format("percent_row (lcl_row - ucl_row)", digits = .digits) %>% 
+    freq_format("n (percent_row)", digits = .digits) %>% 
     # Change col_var to var to make it easier to bind with cont stats later
     select(row_cat, var = col_var, col_cat, formatted_stats) %>% 
     tidyr::pivot_wider(
       names_from = "row_cat",
       values_from = "formatted_stats"
     ) %>% 
+    # Add two spaces in front of categories. This is to reduce the amount of 
+    # formatting we have to do in Word. The spaces won't be visible while testing
+    # in RStudio, but they will show up in the Word document
+    mutate(col_cat = paste0("  ", col_cat)) %>%
+    # Add top row to contain the var name in the col_cat column. This is to 
+    # reduce the amount of formatting we have to do in Word. 
+    add_row(col_cat = !!quo_name(enquo(.pred)), .before = 1) %>% 
+    # Now drop var
+    select(-var, var = col_cat) %>% 
     # Add blank row below
-    add_row(var = "", col_cat = "", No = "", Yes = "")
+    add_row(var = "", No = "", Yes = "")
 }
 
-# For testing
-# cat_stats_fn(v1_use_app, use_app_f, gender_f)
+# For testing  - slide categories to the left
+cat_stats_fn(v1_use_app, use_app_f, gender_f, .digits = 1)
 # cat_stats_fn(v1_use_app, use_app_f, !!sym("gender_f"))
 ```
 
@@ -147,11 +169,18 @@ cat_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
 ```{r eval=FALSE}
 # For testing
 v1_use_app %>% 
+  filter(!is.na(age)) %>% 
   group_by(use_app_f) %>% 
-  mean_table(age) %>% 
-  freq_format("mean (lcl - ucl)", digits = 0) %>% 
-  # Change response_var to var to make it easier to bind with cat stats later
-  select(var = response_var, group_cat, formatted_stats) %>% 
+  summarise(
+    var = "age",
+    mean = mean(age),
+    sd = sd(age),
+  ) %>% 
+  freq_format("mean (sd)", digits = 1) %>% 
+  # Currently, the  first column is named with the group_by variable.
+  # We are changing the column name to group_cat to make it easier to row bind
+  # later. 
+  select(var, group_cat = 1, formatted_stats) %>% 
   tidyr::pivot_wider(
     names_from = "group_cat",
     values_from = "formatted_stats"
@@ -163,11 +192,16 @@ v1_use_app %>%
 ```{r}
 cont_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
   .data %>% 
+    filter(!is.na({{ .pred }})) %>%
     group_by({{ .outcome }}) %>% 
-    mean_table({{ .pred }}) %>% 
-    freq_format("mean (lcl - ucl)", digits = .digits) %>% 
+    summarise(
+      var = !!quo_name(enquo(.pred)),
+      mean = mean({{ .pred }}),
+      sd = sd({{ .pred }}),
+    ) %>% 
+    freq_format("mean (sd)", digits = .digits) %>% 
     # Change response_var to var to make it easier to bind with cat stats later
-    select(var = response_var, group_cat, formatted_stats) %>% 
+    select(var, group_cat = 1, formatted_stats) %>% 
     tidyr::pivot_wider(
       names_from = "group_cat",
       values_from = "formatted_stats"
@@ -177,7 +211,7 @@ cont_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
 }
 
 # For testing
-# cont_stats_fn(v1_use_app, use_app_f, age)
+# cont_stats_fn(v1_use_app, use_app_f, age, .digits = 1)
 ```
 
 ## Create data frames of stats for tables
@@ -245,14 +279,18 @@ For app_change
 table_app_change <- map_dfr(
   .x = variable_order,
   .f = ~ bind_rows(stats_list_app_change[[.x]])
-) %>% 
-# Reorder columns
-select(var, col_cat, No, Yes)
+)
+```
+
+Remove the final blank row. It makes the Word table look cleaner.
+
+```{r}
+table_app_change <- slice(table_app_change, -nrow(table_app_change))
 ```
 
 ### use_app stats
 
-Calculate categorical stats for app_change
+Calculate categorical stats for use_app
 
 ```{r}
 stats_list_use_app <- cat_cols %>%
@@ -272,7 +310,7 @@ stats_list_use_app$have_data_plan_f <- v1_use_app %>%
   cat_stats_fn(use_app_f, have_data_plan_f)
 ```
 
-Calculate continuous stats for use_ap and add them to the stats list
+Calculate continuous stats for use_app and add them to the stats list
 
 ```{r}
 stats_list_use_app <- c(
@@ -291,9 +329,49 @@ For use_app
 table_use_app <- map_dfr(
   .x = variable_order,
   .f = ~ bind_rows(stats_list_use_app[[.x]])
-) %>% 
-# Reorder columns
-select(var, col_cat, No, Yes)
+)
+```
+
+Remove the final blank row. It makes the Word table look cleaner.
+
+```{r}
+table_use_app <- slice(table_use_app, -nrow(table_use_app))
+```
+
+
+# Format tables
+
+To reduce the amount of formatting that needs to be done in word. 
+
+### Make variable names easier for end users to read
+
+```{r}
+change_row_names <- function(.data) {
+  .data %>% 
+    mutate(var = case_when(
+      var == "age" ~ "Age, mean (sd)",
+      var == "gender_f" ~ "Gender, n (row percent)",
+      var == "race_eth_4_cat_f" ~ "Race/Ethnicity, n (row percent)",
+      var == "high_school_grad_f" ~ "High school grad or GED, n (row percent)",
+      var == "employ_5_cat_f" ~ "Employment status, n (row percent)",
+      var == "genhealth_f" ~ "General health, n (row percent)",
+      var == "ment_health_treat_f" ~ "Mental health treatment, n (row percent)",
+      var == "lifetime_homeless" ~ "Lifetime months homeless, mean (sd)",
+      var == "lifetime_jail" ~ "Lifetime years in jail, mean (sd)",
+      var == "have_mobile_f" ~ "Have mobile phone, n (row percent)",
+      var == "have_data_plan_f" ~ "Have data plan1, n (row percent)",
+      TRUE ~ var
+    ))
+}
+
+# For testing
+# change_row_names(table_app_change)
+# change_row_names(table_use_app)
+```
+
+```{r}
+table_app_change <- change_row_names(table_app_change)
+table_use_app <- change_row_names(table_use_app)
 ```
 
 
@@ -303,10 +381,23 @@ All the stats are stored in data frames. Next, we will convert those data frames
 
 ## app_change
 
+Make column headers
+
 ```{r}
-table_app_change_ft <- flextable(table_app_change) %>% 
+table_app_change_ft <- flextable(table_app_change) %>%
   my_ft_theme() %>% 
-  autofit()
+  # Change column widths. figure out through trial and error
+  width(width = c(3.82, 1.34, 1.34)) %>% 
+  # Center the final two columns
+  align(j = c(2, 3), align = "center", part = "all") %>% 
+  # Change header names -- add subgroup Ns to headers
+  set_header_labels(
+    var = "Characteristic",
+    No = paste0("No\n(n=", n_app_change[1], ")"), 
+    Yes = paste0("Yes\n(n=", n_app_change[2], ")")
+  ) %>% 
+  # Bold column headers
+  bold(part = "header")
 ```
 
 ## use_app
@@ -314,21 +405,18 @@ table_app_change_ft <- flextable(table_app_change) %>%
 ```{r}
 table_use_app_ft <- flextable(table_use_app) %>% 
   my_ft_theme() %>% 
-  autofit()
-```
-
-Output Word document for easy copy paste into template. Ideally, this file will output fully formatted tables and add them to the Word document in the future. For now, I had to copy and paste the tables created below.
-
-```{r}
-read_docx() %>%
-  body_add_flextable(table_app_change_ft) %>% 
-  print("table_app_change_ft.docx")
-```
-
-```{r}
-read_docx() %>%
-  body_add_flextable(table_use_app_ft) %>% 
-  print("table_use_app_ft.docx")
+  # Change column widths. figure out through trial and error
+  width(width = c(3.82, 1.34, 1.34)) %>% 
+  # Center the final two columns
+  align(j = c(2, 3), align = "center", part = "all") %>% 
+  # Change header names -- add subgroup Ns to headers
+  set_header_labels(
+    var = "Characteristic",
+    No = paste0("No\n(n=", n_use_app[1], ")"), 
+    Yes = paste0("Yes\n(n=", n_use_app[2], ")")
+  ) %>% 
+  # Bold column headers
+  bold(part = "header")
 ```
 
 
@@ -337,17 +425,21 @@ read_docx() %>%
 Didn't get time to finish here and below. Ideally, this file will output fully formatted tables and add them to the Word document in the future. For now, I had to copy and paste the tables created above.
 
 ```{r}
-# doc <- read_docx("template_descriptive_analysis.docx") %>% 
-#   body_replace_text_at_bkm("date", as.character(Sys.Date()))
+doc <- read_docx("template_descriptive_analysis.docx") %>%
+  body_replace_text_at_bkm("date", as.character(Sys.Date())) %>% 
+  body_replace_text_at_bkm("n_app_change", as.character(sum(n_app_change))) %>% 
+  body_replace_flextable_at_bkm("table_app_change", table_app_change_ft) %>% 
+  body_replace_text_at_bkm("n_use_app", as.character(sum(n_use_app))) %>% 
+  body_replace_flextable_at_bkm("table_use_app", table_use_app_ft) 
 ```
 
 
 # 📌Generate Word reports
 
 ```{r}
-# print(
-#   dts_report, 
-#   "docs/DTS Table Updates.docx"
-# )
+print(
+  doc,
+  "Smartphone Table Updates.docx"
+)
 ```
 
