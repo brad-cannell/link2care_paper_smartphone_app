@@ -64,46 +64,13 @@ v1 <- read_rds("/Volumes/sph_research/Link2Care/Statistical Projects/Montgomery 
 ```
 
 ```{r}
-dim(v1) # 324  29
-```
-
-
-# 🚧Data management
-
-Drop rows with missing outcome
-
-```{r}
-v1_app_change <- v1 %>%
-  filter(!is.na(app_change_f))
-```
-
-```{r}
-v1_use_app <- v1 %>%
-  filter(!is.na(use_app_f))
+dim(v1) # 324  82
 ```
 
 
 # 📈Analysis
 
-## Outcome distribution
-
-```{r}
-n_app_change <- v1_app_change %>% 
-  freq_table(app_change_f) %>% 
-  pull(n) %>%
-  set_names(levels(v1_app_change$app_change_f))
-
-n_app_change
-```
-
-```{r}
-n_use_app <- v1_use_app %>% 
-  freq_table(use_app_f) %>% 
-  pull(n) %>%
-  set_names(levels(v1_use_app$use_app_f))
-
-n_use_app
-```
+2021-12-01: Jordan and Michael no longer want Table 1 broken down by app_change (Yes/NO) and they no longer want table 2 broken down by app_use (Yes/No).
 
 ## Create helper functions
 
@@ -112,232 +79,268 @@ For calculating statistics of interest.
 ### Categorical statistics
 
 ```{r eval=FALSE}
-# For testing - slide categories to the left
-v1_use_app %>% 
-  freq_table(use_app_f, gender_f) %>% 
-  freq_format("n (percent_row)", digits = 1) %>% 
-  # Change col_var to var to make it easier to bind with cont stats later
-  select(row_cat, var = col_var, col_cat, formatted_stats) %>% 
-  tidyr::pivot_wider(
-    names_from = "row_cat",
-    values_from = "formatted_stats"
-  ) %>% 
+# For testing
+v1 %>% 
+  filter(!is.na(app_use_f)) %>% 
+  freq_table(app_use_f, drop = TRUE) %>% 
+  freq_format("n (percent)", digits = 1) %>% 
+  select(var, cat, formatted_stats) %>% 
   # Add two spaces in front of categories. This is to reduce the amount of 
   # formatting we have to do in Word. The spaces won't be visible while testing
   # in RStudio, but they will show up in the Word document
-  mutate(col_cat = paste0("  ", col_cat)) %>% 
-  # Add top row to contain the var name in the col_cat column. This is to 
+  mutate(cat = paste0("  ", cat)) %>% 
+  # Add top row to contain the var name in the cat column. This is to 
   # reduce the amount of formatting we have to do in Word. 
-  add_row(col_cat = "gender_f", .before = 1) %>% 
+  add_row(cat = .$var[1], .before = 1) %>% 
   # Now drop var
-  select(-var, var = col_cat) %>% 
+  select(-var, var = cat) %>% 
   # Add blank row below
-  add_row(var = "", No = "", Yes = "")
+  add_row(var = "", formatted_stats = "")
 ```
 
 ```{r}
-cat_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
+cat_stats_fn <- function(.data, .outcome, .digits = 0) {
   .data %>% 
-    freq_table({{ .outcome }}, {{ .pred }}) %>% 
-    freq_format("n (percent_row)", digits = .digits) %>% 
-    # Change col_var to var to make it easier to bind with cont stats later
-    select(row_cat, var = col_var, col_cat, formatted_stats) %>% 
-    tidyr::pivot_wider(
-      names_from = "row_cat",
-      values_from = "formatted_stats"
-    ) %>% 
+    filter(!is.na({{ .outcome }})) %>% 
+    freq_table({{ .outcome }}, drop = TRUE) %>% 
+    freq_format("n (percent)", digits = .digits) %>% 
+    select(var, cat, formatted_stats) %>% 
     # Add two spaces in front of categories. This is to reduce the amount of 
     # formatting we have to do in Word. The spaces won't be visible while testing
     # in RStudio, but they will show up in the Word document
-    mutate(col_cat = paste0("  ", col_cat)) %>%
+    mutate(cat = paste0("  ", cat)) %>%
     # Add top row to contain the var name in the col_cat column. This is to 
     # reduce the amount of formatting we have to do in Word. 
-    add_row(col_cat = !!quo_name(enquo(.pred)), .before = 1) %>% 
+    add_row(cat = .$var[1], .before = 1) %>% 
     # Now drop var
-    select(-var, var = col_cat) %>% 
+    select(-var, var = cat) %>% 
     # Add blank row below
-    add_row(var = "", No = "", Yes = "")
+    add_row(var = "", formatted_stats = "")
 }
 
-# For testing  - slide categories to the left
-cat_stats_fn(v1_use_app, use_app_f, gender_f, .digits = 1)
-# cat_stats_fn(v1_use_app, use_app_f, !!sym("gender_f"))
+# For testing
+# cat_stats_fn(v1, app_issues_other_f, .digits = 1)
+# cat_stats_fn(v1, !!sym("gender_f"))
 ```
 
 ### Continuous statistics
 
 ```{r eval=FALSE}
 # For testing
-v1_use_app %>% 
+v1 %>% 
   filter(!is.na(age)) %>% 
-  group_by(use_app_f) %>% 
-  summarise(
-    var = "age",
-    mean = mean(age),
-    sd = sd(age),
-  ) %>% 
-  freq_format("mean (sd)", digits = 1) %>% 
-  # Currently, the  first column is named with the group_by variable.
-  # We are changing the column name to group_cat to make it easier to row bind
-  # later. 
-  select(var, group_cat = 1, formatted_stats) %>% 
-  tidyr::pivot_wider(
-    names_from = "group_cat",
-    values_from = "formatted_stats"
-  ) %>% 
+  mean_table(age) %>% 
+  mean_format("mean (sd)", digits = 1) %>% 
+  select(var = response_var, formatted_stats) %>% 
   # Add blank row below
-  add_row(var = "", No = "", Yes = "")
+  add_row(var = "", formatted_stats = "")
 ```
 
 ```{r}
-cont_stats_fn <- function(.data, .outcome, .pred, .digits = 0) {
+cont_stats_fn <- function(.data, .outcome, .digits = 0) {
   .data %>% 
-    filter(!is.na({{ .pred }})) %>%
-    group_by({{ .outcome }}) %>% 
-    summarise(
-      var = !!quo_name(enquo(.pred)),
-      mean = mean({{ .pred }}),
-      sd = sd({{ .pred }}),
-    ) %>% 
-    freq_format("mean (sd)", digits = .digits) %>% 
-    # Change response_var to var to make it easier to bind with cat stats later
-    select(var, group_cat = 1, formatted_stats) %>% 
-    tidyr::pivot_wider(
-      names_from = "group_cat",
-      values_from = "formatted_stats"
-    ) %>% 
+    filter(!is.na({{ .outcome }})) %>%
+    mean_table({{ .outcome }}) %>%
+    mean_format("mean (sd)", digits = .digits) %>% 
+    select(var = response_var, formatted_stats) %>% 
     # Add blank row below
-    add_row(var = "", No = "", Yes = "")
+    add_row(var = "", formatted_stats = "")
 }
 
 # For testing
-# cont_stats_fn(v1_use_app, use_app_f, age, .digits = 1)
+# cont_stats_fn(v1, age, .digits = 1)
+```
+
+### Dummy variables
+
+The "Which of the following forms of media do you use?" and the "What type of health related issue?" questions both allow multiple answers. This results in dummy variables for each possible response option. For example:
+
+|------------|:--------:|
+| sm_email_f | NA       |
+| No         | 74 (23)  |
+| Yes        | 250 (77) |
+
+Instead, we want to treat each of the "yes" rows for each of the individual dummy variables as though they were categories of a higher level variable. For example:
+
+|--------------|:--------:|
+| Use media    | NA       |
+|   Email      | 250 (77) |
+|   Twitter    | 29 (9)   |
+
+```{r eval=FALSE}
+# For testing
+v1 %>% 
+  filter(!is.na(sm_email_f)) %>% 
+  freq_table(sm_email_f, drop = TRUE) %>% 
+  freq_format("n (percent)", digits = 1) %>% 
+  # Only keep the "Yes" row
+  filter(cat == "Yes") %>% 
+  select(var, formatted_stats) %>% 
+  # Add two spaces in front of categories. This is to reduce the amount of 
+  # formatting we have to do in Word. The spaces won't be visible while testing
+  # in RStudio, but they will show up in the Word document
+  mutate(var = paste0("  ", var))
+```
+
+```{r}
+# Function to calculate the stats of interest for a single dummy variable
+dummy_stats_fn <- function(.data, .outcome, .digits = 0) {
+  .data %>% 
+    filter(!is.na({{ .outcome }})) %>% 
+    freq_table({{ .outcome }}, drop = TRUE) %>% 
+    freq_format("n (percent)", digits = .digits) %>% 
+    # Only keep the "Yes" row
+    filter(cat == "Yes") %>% 
+    select(var, formatted_stats) %>% 
+    # Add two spaces in front of categories. This is to reduce the amount of 
+    # formatting we have to do in Word. The spaces won't be visible while testing
+    # in RStudio, but they will show up in the Word document
+    mutate(var = paste0("  ", var))
+}
+
+# For testing
+# dummy_stats_fn(v1, sm_email_f, .digits = 1)
+```
+
+Apply dummy_stats_fn to multiple dummy variables and bind the results together as though they were categories of a single variable. 
+
+```{r}
+# For testing
+map_df(
+  .x = c("sm_email_f", "sm_facebook_f"),
+  .f = ~ dummy_stats_fn(v1, !! sym(.x))
+) %>% 
+  # Add text indicating the name of the higher-level parent question to the first
+  # row of the data frame
+  add_row(var = "media_types", formatted_stats = NA, .before = 1) %>% 
+  # Add blank row below
+  add_row(var = "", formatted_stats = "")
+```
+
+```{r}
+dummies_stats_fn <- function(.data, .parent_q, .dummies, .digits = 0) {
+  map_df(
+    .x = .dummies,
+    .f = ~ dummy_stats_fn(.data, !! sym(.x), .digits = .digits)
+  ) %>% 
+    # Add text indicating the name of the higher-level parent question to the first
+    # row of the data frame
+    add_row(var = .parent_q, formatted_stats = NA, .before = 1) %>% 
+    # Add blank row below
+    add_row(var = "", formatted_stats = "")
+}
+
+# For testing
+# dummies_stats_fn(v1, "media_types", c("sm_email_f", "sm_facebook_f"), .digits = 1)
 ```
 
 ## Create data frames of stats for tables
 
-Below, we create descriptive tables by v1_app_change and v1_use_app. 
+```{r}
+# For checking
+# select(v1, ends_with("_f")) %>% names()
+# select(v1, where(~ !("haven_labelled" %in% class(.x)) && !is.factor(.x)))
+```
 
 ```{r}
 cat_cols <- c(
-  "gender_f", "race_eth_4_cat_f", "high_school_grad_f", "employ_5_cat_f", "genhealth_f",
-  "ment_health_treat_f", "have_mobile_f", "have_data_plan_f" 
+  "gender_f", "race_eth_4_cat_f", "high_school_grad_f", "employ_5_cat_f", 
+  "genhealth_f", "ment_health_treat_f", "mobile_have_f", "mobile_pays_f",
+  "mobile_talk_min_f", "mobile_smart_f", "mobile_have_data_plan_f", 
+  "mobile_number_change_f", "access_internet_freq_f", "facebook_freq_f", 
+  "app_change_f", "app_use_f"
 )
 ```
 
 ```{r}
-cont_cols <- c("age", "lifetime_homeless", "lifetime_jail")
+cont_cols <- c(
+  "age", "lifetime_homeless", "lifetime_jail", "phys_hlth_days", "ment_hlth_days"
+)
 ```
+
+```{r}
+dummy_cols <- list(
+  # Which of the following forms of media do you use?
+  media_types = c(
+  "sm_email_f", "sm_facebook_f", "sm_google_plus_f", "sm_twitter_f", 
+  "sm_blogs_f","sm_instagram_f", "sm_snapchat_f", "sm_linkedin_f", "sm_none_f"
+  ),
+  
+  # What type of health related issue? [use smartphone app to manage]
+  app_health_issue = c(
+  "app_issues_food_f", "app_issues_medication_f", "app_issues_mood_f", 
+  "app_issues_phys_act_f", "app_issues_sleep_f", "app_issues_smoking_f", 
+  "app_issues_stress_f", "app_issues_weight_f", "app_issues_other_f"
+  )
+)
+```
+
+### Create lists of statistics of interest
+
+Calculate categorical stats
+
+```{r}
+stats_list <- cat_cols %>%
+  set_names(cat_cols) %>% 
+  map(~ cat_stats_fn(v1, !! sym(.x), .digits = 1))
+```
+
+Calculate continuous stats
+
+```{r}
+stats_list <- c(
+  stats_list,
+  cont_cols %>%
+    set_names(cont_cols) %>%
+    map(~ cont_stats_fn(v1, !! sym(.x), .digits = 1))
+)
+```
+
+Calculate categorical stats for dummy variables
+
+```{r}
+stats_list <- c(
+  stats_list,
+  imap(
+    dummy_cols,
+    ~ dummies_stats_fn(v1, .y, .x, .digits = 1)
+  )
+)
+```
+
+
+#### Bind together categorical and continuous stats
 
 ```{r}
 # Use this later to reorder the variables in the tables
 variable_order <- c(
-  "age", "gender_f", "race_eth_4_cat_f", "high_school_grad_f", "employ_5_cat_f", 
-  "genhealth_f", "ment_health_treat_f", "lifetime_homeless", "lifetime_jail",
-  "have_mobile_f", "have_data_plan_f"
+  # Sociodemographics
+  "age", "gender_f", "race_eth_4_cat_f", "high_school_grad_f", "employ_5_cat_f",
+  "lifetime_homeless", "lifetime_jail",
+  
+  # Health
+  "genhealth_f", "phys_hlth_days", "ment_hlth_days", "ment_health_treat_f",
+  
+  # Technology use
+  "mobile_have_f", "mobile_pays_f",
+  "mobile_talk_min_f", "mobile_smart_f", "mobile_have_data_plan_f", 
+  "mobile_number_change_f", "media_types", "access_internet_freq_f", 
+  "facebook_freq_f", "app_change_f", "app_use_f", "app_health_issue"
 )
 ```
 
-### app_change stats
-
-Calculate categorical stats for app_change
-
 ```{r}
-stats_list_app_change <- cat_cols %>%
-  set_names(cat_cols) %>% 
-  map(~ cat_stats_fn(v1_app_change, app_change_f, !! sym(.x)))
-```
-
-**NOTE:** The question about having a data plan has a ton of missing (79%). I dug into this a little more. It's because only 84 out of the 303 participants reported having a cell phone at all. These numbers will obviously change over time as we collect more data, but I imagine the proportions will remain relatively constant.
-
-I could have dropped the row containing the NA responses directly inside of `cat_stats_fn` above, but I like that I was able to see all the missing and investigate it. Having said that, I don't think we need that row to appear in the final table. I'm going to drop it now. We can't just filter it out though, the percentages won't be correct.
-
-```{r}
-stats_list_app_change$have_data_plan_f <- v1_app_change %>% 
-  # Remove rows for people with no data plan
-  filter(!is.na(have_data_plan_f)) %>% 
-  # Calculate app_change by have data plan
-  cat_stats_fn(app_change_f, have_data_plan_f)
-```
-
-Calculate continuous stats for app_change and add them to the stats list
-
-```{r}
-stats_list_app_change <- c(
-  stats_list_app_change,
-  cont_cols %>%
-    set_names(cont_cols) %>%
-    map(~ cont_stats_fn(v1_app_change, app_change_f, !! sym(.x)))
-)
-```
-
-#### Bind together categorical and continuous stats
-
-For app_change
-
-```{r}
-table_app_change <- map_dfr(
+table_1 <- map_dfr(
   .x = variable_order,
-  .f = ~ bind_rows(stats_list_app_change[[.x]])
+  .f = ~ bind_rows(stats_list[[.x]])
 )
 ```
 
 Remove the final blank row. It makes the Word table look cleaner.
 
 ```{r}
-table_app_change <- slice(table_app_change, -nrow(table_app_change))
+table_1 <- slice(table_1, -nrow(table_1))
 ```
-
-### use_app stats
-
-Calculate categorical stats for use_app
-
-```{r}
-stats_list_use_app <- cat_cols %>%
-  set_names(cat_cols) %>% 
-  map(~ cat_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
-```
-
-**NOTE:** The question about having a data plan has a ton of missing (77%). I dug into this a little more. It's because only 84 out of the 303 participants reported having a cell phone at all. In that light, 71 of those 84 (85%) responded to the question about having a data plan. These numbers will obviously change over time as we collect more data, but I imagine the proportions will remain relatively constant.
-
-I could have dropped the row containing the NA responses directly inside of `cat_stats_fn` above, but I like that I was able to see all the missing and investigate it. Having said that, I don't think we need that row to appear in the final table. I'm going to drop it now. We can't just filter it out though, the percentages won't be correct.
-
-```{r}
-stats_list_use_app$have_data_plan_f <- v1_use_app %>% 
-  # Remove rows for people with no data plan
-  filter(!is.na(have_data_plan_f)) %>% 
-  # Calculate use_app by have data plan
-  cat_stats_fn(use_app_f, have_data_plan_f)
-```
-
-Calculate continuous stats for use_app and add them to the stats list
-
-```{r}
-stats_list_use_app <- c(
-  stats_list_use_app,
-  cont_cols %>%
-    set_names(cont_cols) %>%
-    map(~ cont_stats_fn(v1_use_app, use_app_f, !! sym(.x)))
-)
-```
-
-#### Bind together categorical and continuous stats
-
-For use_app
-
-```{r}
-table_use_app <- map_dfr(
-  .x = variable_order,
-  .f = ~ bind_rows(stats_list_use_app[[.x]])
-)
-```
-
-Remove the final blank row. It makes the Word table look cleaner.
-
-```{r}
-table_use_app <- slice(table_use_app, -nrow(table_use_app))
-```
-
 
 # Format tables
 
@@ -345,33 +348,68 @@ To reduce the amount of formatting that needs to be done in word.
 
 ### Make variable names easier for end users to read
 
+We want to make variable names easier for end users to read and also add the statistics used to the row headers.
+
 ```{r}
 change_row_names <- function(.data) {
   .data %>% 
     mutate(var = case_when(
+      # Sociodemographics
       var == "age" ~ "Age, mean (sd)",
-      var == "gender_f" ~ "Gender, n (row percent)",
-      var == "race_eth_4_cat_f" ~ "Race/Ethnicity, n (row percent)",
-      var == "high_school_grad_f" ~ "High school grad or GED, n (row percent)",
-      var == "employ_5_cat_f" ~ "Employment status, n (row percent)",
-      var == "genhealth_f" ~ "General health, n (row percent)",
-      var == "ment_health_treat_f" ~ "Mental health treatment, n (row percent)",
+      var == "gender_f" ~ "Gender, n (percent)",
+      var == "race_eth_4_cat_f" ~ "Race/Ethnicity, n (percent)",
+      var == "high_school_grad_f" ~ "High school grad or GED, n (percent)",
+      var == "employ_5_cat_f" ~ "Employment status, n (percent)",
       var == "lifetime_homeless" ~ "Lifetime months homeless, mean (sd)",
       var == "lifetime_jail" ~ "Lifetime years in jail, mean (sd)",
-      var == "have_mobile_f" ~ "Have mobile phone, n (row percent)",
-      var == "have_data_plan_f" ~ "Have data plan1, n (row percent)",
+      
+      # Health
+      var == "genhealth_f" ~ "General health, n (percent)",
+      var == "phys_hlth_days" ~ "N days out of past 30 physical health not good, mean (sd)", 
+      var == "ment_hlth_days" ~ "N days out of past 30 mental health not good, mean (sd)",
+      var == "ment_health_treat_f" ~ "Mental health treatment, n (percent)",
+      
+      # Technology use
+      var == "mobile_have_f" ~ "Have mobile phone, n (percent)",
+      var == "mobile_pays_f" ~ "Mobile phone bill payer, n (percent)",
+      var == "mobile_talk_min_f" ~ "Talk minutes in mobile plan, n (percent)", 
+      var == "mobile_smart_f" ~ "Is mobile phone a smart phone, n (percent)",
+      var == "mobile_have_data_plan_f" ~ "Have data plan, n (percent)",
+      var == "mobile_number_change_f" ~ "N times mobile number has changed, n (percent)", 
+      var == "media_types" ~ "Types of media used, n (percent)",
+      var == "  sm_email_f" ~ "  Email", 
+      var == "  sm_facebook_f" ~ "  Facebook", 
+      var == "  sm_google_plus_f" ~ "  Google Plus",
+      var == "  sm_twitter_f" ~ "  Twitter",
+      var == "  sm_blogs_f" ~ "  Blogs",
+      var == "  sm_instagram_f" ~ "  Instagram",
+      var == "  sm_snapchat_f" ~ "  Snapchat",
+      var == "  sm_linkedin_f" ~ "  LinkedIn",
+      var == "  sm_none_f" ~ "  None",
+      var == "access_internet_freq_f" ~ "Frequency of internet access, n (percent)",
+      var == "facebook_freq_f" ~ "Frequency of Facebook use, n (percent)",
+      var == "app_change_f" ~ "Believe smartphone app can help change actions or behaviors, n (percent)",
+      var == "app_use_f" ~ "used smartphone app to manage health-related issues, n (percent)",
+      var == "app_health_issue" ~ "Type of issue managed with smartphone app, n (percent)",
+      var == "  app_issues_food_f" ~ "  Food or calorie tracking",
+      var == "  app_issues_medication_f" ~ "  Medication reminders",
+      var == "  app_issues_mood_f" ~ "  Mood manager",
+      var == "  app_issues_phys_act_f" ~ "  Physical activity",
+      var == "  app_issues_sleep_f" ~ "  Sleep tracker",
+      var == "  app_issues_smoking_f" ~ "  Smoking Cessation",
+      var == "  app_issues_stress_f" ~ "  Stress reduction",
+      var == "  app_issues_weight_f" ~ "  Weight loss tracking",
+      var == "  app_issues_other_f" ~ "  Other",
       TRUE ~ var
     ))
 }
 
 # For testing
-# change_row_names(table_app_change)
-# change_row_names(table_use_app)
+# change_row_names(table_1)
 ```
 
 ```{r}
-table_app_change <- change_row_names(table_app_change)
-table_use_app <- change_row_names(table_use_app)
+table_1 <- change_row_names(table_1)
 ```
 
 
@@ -379,58 +417,39 @@ table_use_app <- change_row_names(table_use_app)
 
 All the stats are stored in data frames. Next, we will convert those data frames to flextables that we can add to our Word document template.
 
-## app_change
-
-Make column headers
+## Make column headers
 
 ```{r}
-table_app_change_ft <- flextable(table_app_change) %>%
-  my_ft_theme() %>% 
+table_1_ft <- flextable(table_1) %>%
   # Change column widths. figure out through trial and error
-  width(width = c(3.82, 1.34, 1.34)) %>% 
+  width(width = c(4.69, 1.81)) %>%
   # Center the final two columns
-  align(j = c(2, 3), align = "center", part = "all") %>% 
+  align(j = 2, align = "center", part = "all") %>% 
   # Change header names -- add subgroup Ns to headers
   set_header_labels(
     var = "Characteristic",
-    No = paste0("No\n(n=", n_app_change[1], ")"), 
-    Yes = paste0("Yes\n(n=", n_app_change[2], ")")
+    formatted_stats = "Statistics"
   ) %>% 
   # Bold column headers
-  bold(part = "header")
-```
-
-## use_app
-
-```{r}
-table_use_app_ft <- flextable(table_use_app) %>% 
-  my_ft_theme() %>% 
-  # Change column widths. figure out through trial and error
-  width(width = c(3.82, 1.34, 1.34)) %>% 
-  # Center the final two columns
-  align(j = c(2, 3), align = "center", part = "all") %>% 
-  # Change header names -- add subgroup Ns to headers
-  set_header_labels(
-    var = "Characteristic",
-    No = paste0("No\n(n=", n_use_app[1], ")"), 
-    Yes = paste0("Yes\n(n=", n_use_app[2], ")")
+  bold(part = "header") %>% 
+  footnote(
+    i = c(67, 80, 119), j = 1,
+    value = as_paragraph(c(
+      "Have data plan was only asked of participants who reported having a mobile phone.",
+      "Percentages sum to >100% because participants could select more than one response option.",
+      "Percentages sum to >100% because participants could select more than one response option."
+    ))
   ) %>% 
-  # Bold column headers
-  bold(part = "header")
+  my_ft_theme()
 ```
-
 
 # 📝Load Word template for officer
-
-Didn't get time to finish here and below. Ideally, this file will output fully formatted tables and add them to the Word document in the future. For now, I had to copy and paste the tables created above.
 
 ```{r}
 doc <- read_docx("template_descriptive_analysis.docx") %>%
   body_replace_text_at_bkm("date", as.character(Sys.Date())) %>% 
-  body_replace_text_at_bkm("n_app_change", as.character(sum(n_app_change))) %>% 
-  body_replace_flextable_at_bkm("table_app_change", table_app_change_ft) %>% 
-  body_replace_text_at_bkm("n_use_app", as.character(sum(n_use_app))) %>% 
-  body_replace_flextable_at_bkm("table_use_app", table_use_app_ft) 
+  body_replace_text_at_bkm("n_baseline", as.character(nrow(v1))) %>% 
+  body_replace_flextable_at_bkm("table_baseline_characteristics", table_1_ft) 
 ```
 
 

@@ -53,50 +53,135 @@ dim(v1) # 324 733
 Keep variables of interest only
 
 ```{r}
-v1 <- v1 %>% 
+v1 <- v1 %>%
   select(
-    id = SUBJECT, gender = GENDER, hispanic = SQ_2, race = SQ_3, age = SQ_4, 
-    have_mobile = SQ_12, have_data_plan = SQ_16, edu_20_cat = DEM5V1, 
-    employ_9_cat = DEM6V1, lifetime_homeless = BH1V1, lifetime_jail = BH17V1,
-    ment_health_treat = BH9V1, app_change = S41_V1, use_app = S42_V1, 
-    genhealth = HS1_V1, 
+    # Administrative data
+    id = SUBJECT, gender = GENDER, 
+    
+    # Screening questions
+    hispanic = SQ_2, race = SQ_3, age = SQ_4, mobile_have = SQ_12, 
+    mobile_pays = SQ_13, mobile_talk_min = SQ_14, mobile_smart = SQ_15, 
+    mobile_have_data_plan = SQ_16, mobile_number_change = SQ_17, 
+    sm_email = SQ_18A, sm_facebook = SQ_18B, sm_google_plus = SQ_18C, 
+    sm_twitter = SQ_18D, sm_blogs = SQ_18E, sm_instagram = SQ_18F, 
+    sm_snapchat = SQ_18G, sm_linkedin = SQ_18H, sm_none = SQ_18I, 
+    access_internet_freq = SQ_19, facebook_freq = SQ_21,
+    
+    # Demographics questions
+    edu_20_cat = DEM5V1, employ_9_cat = DEM6V1, 
+    
+    # The Brief Homelessness Questionnaire (BH)
+    lifetime_homeless = BH1V1, ment_health_treat = BH9V1, lifetime_jail = BH17V1,
+    
+    # SF-12 Health Survey (HS)
+    genhealth = HS1_V1,
+    
+    # Health Related Quality of Life (HRQ)
+    phys_hlth_days = HRQ1_V1, ment_hlth_days = HRQ2_V1,
+    
+    # Self-Rated Health Questionnaire (S)
+    app_change = S41_V1, app_use = S42_V1, app_issues_food = S43_V1A, 
+    app_issues_medication = S43_V1B, app_issues_mood = S43_V1C, 
+    app_issues_phys_act = S43_V1D, app_issues_sleep = S43_V1E, 
+    app_issues_smoking = S43_V1F, app_issues_stress = S43_V1G, 
+    app_issues_weight = S43_V1H, app_issues_other = S43_V1I
   )
 ```
 
 ## Recode missing
 
+### Helper function
+
+Convert 9's (or 7's, or 8's) to NA's and then add attributes back to vector.
+
+First, I have to remove the "have_labelled" and "vctrs_vctr" class from each variable for if_else() to work.
+
+But, I also need to keep the label attributes. They are erased when I convert the 9's to NA.
+
+```{r}
+nines_to_na <- function(x, nines) {
+  # Store the attributes
+  x_attr <- attributes(x)
+  # Remove "haven_labelled" and "vctrs_vctr" from class list so that if_else()
+  # will work.
+  # Set class of column to whatever is remaining in the class list.
+  classes <- class(x)
+  class(x) <- classes[!class(x) %in% c("haven_labelled", "vctrs_vctr")]
+  # Convert 9's to NA's
+  x <- if_else(x %in% nines, NA_real_, x)
+  # Add attributes back to the vector
+  attributes(x) <- x_attr
+  # Return x
+  x
+}
+
+# For testing
+# test <- all_visits
+# test$SQ_13[1] <- 7
+# test$SQ_13[3] <- 9
+# test$SQ_13[4] <- 99
+# test %>% 
+#   select(SQ_13) %>% 
+#   mutate(SQ_13_test = nines_to_na(SQ_13, c(7, 9, 99))) %>% 
+#   pull(SQ_13_test) %>% 
+#   attributes()
+# rm(test)
+```
+
 ```{r}
 v1 <- v1 %>% 
   mutate(
     across(
-      .cols = c(app_change, use_app),
-      .fns  = ~ ifelse(.x %in% c(7, 8, 9), NA, .x)
+      c(app_change, app_use),
+      ~ nines_to_na(.x, c(7, 8, 9))
+    ),
+    across(
+      c(mobile_number_change, ),
+      ~ nines_to_na(.x, 999)
     )
   )
 ```
 
 ## Factor variables
 
-```{r}
-ny_lab <- c("No", "Yes")
-```
+### Helper function
+
+### Use SPSS labels as factor levels for categorical variables
 
 ```{r}
+# For use inside across()
+spss_to_fs <- function(x) {
+  levs <- attr(x, "labels")
+  labs <- names(levs)
+  x_f <- factor(x, levs, labs)
+  x_f
+}
+
+# For testing
+# all_visits %>%
+#   select(SQ_2, SQ_3) %>%
+#   mutate(
+#     across(
+#       everything(),
+#       spss_to_fs,
+#       .names = "{col}_f"
+#     )
+#   )
+```
+
+### Add SPSS lables to factors
+
+```{r}
+# Make factor versions of categorical variables
 v1 <- v1 %>% 
   mutate(
-    gender_f = factor(gender, 0:2, c("Male", "Female", "Other")),
-    hispanic_f = factor(hispanic, 0:1, ny_lab),
-    have_mobile_f = factor(have_mobile, 0:1, ny_lab),
-    have_data_plan_f = factor(
-      have_data_plan, 0:2, c("No", "Yes, limited", "Yes, unlimited")
-    ),
-    ment_health_treat_f = factor(ment_health_treat, 0:1, ny_lab),
-    app_change_f = factor(app_change, 0:1, ny_lab),
-    use_app_f = factor(use_app, 0:1, ny_lab),
-    genhealth_f = factor(
-      genhealth, 1:5, c(
-        "Excellent", "Very Good", "Good", "Fair", "Poor"
-      )
+    across(
+      # It looks like all the categorical variables (e.g., gender) have a class
+      # of "haven_labelled". In contrast, the numeric variables (e.g., age) do
+      # not
+      where(~ "haven_labelled" %in% class(.x)),
+      spss_to_fs,
+      .names = "{col}_f"
     )
   )
 ```
@@ -104,7 +189,7 @@ v1 <- v1 %>%
 ## Recode variables
 
 ```{r}
-v1 <- v1 %>% 
+v1 <- v1 %>%
   mutate(
     
     # Race ethnicity
@@ -125,7 +210,7 @@ v1 <- v1 %>%
     
     # Education
     high_school_grad = if_else(edu_20_cat < 12, 0, 1),
-    high_school_grad_f = factor(high_school_grad, 0:1, ny_lab),
+    high_school_grad_f = factor(high_school_grad, 0:1, c("No", "Yes")),
     
     # Employment status
     employ_5_cat = case_when(
@@ -167,13 +252,3 @@ write_rds(
 )
 ```
 
-
-# 🗑Clean up
-
-```{r}
-rm(ny_lab)
-```
-
-```{r echo=FALSE}
-sessionInfo()
-```
