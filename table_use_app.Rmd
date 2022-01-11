@@ -485,6 +485,11 @@ v1 %>%
 ```
 
 ```{r}
+summary(v1$lifetime_homeless)
+```
+
+
+```{r}
 var <- quo(lifetime_jail)
 v1 %>% 
   filter(!is.na({{ var }})) %>% 
@@ -496,6 +501,11 @@ v1 %>%
   mean_format("median (iqr)", digits = 1) %>% 
   select(var, formatted_stats)
 ```
+
+```{r}
+summary(v1$lifetime_jail)
+```
+
 
 Number of issues managed
 
