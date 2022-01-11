@@ -462,3 +462,116 @@ print(
 )
 ```
 
+
+# Last minute updates
+
+2022-01-03, from Jordan Neil 
+
+Brad, sorry to ask this again as you provided it for Jillian’s paper, but for this manuscript can you:
+1. Provide Mdn and IQR for: Lifetime months homeless and Lifetime years in jail?
+2. Create a category that reports participants number of issues managed by a smartphone app? i.e., we currently have it broken down by issue, but could you also provide how many managed 2 issues, 3 issues, 4 issues, etc.?
+
+```{r}
+var <- quo(lifetime_homeless)
+v1 %>% 
+  filter(!is.na({{ var }})) %>% 
+  summarise(
+    var = !!quo_name(var),
+    median = median({{ var }}),
+    iqr = IQR({{ var }})
+  ) %>% 
+  mean_format("median (iqr)", digits = 1) %>% 
+  select(var, formatted_stats)
+```
+
+```{r}
+var <- quo(lifetime_jail)
+v1 %>% 
+  filter(!is.na({{ var }})) %>% 
+  summarise(
+    var = !!quo_name(var),
+    median = median({{ var }}),
+    iqr = IQR({{ var }})
+  ) %>% 
+  mean_format("median (iqr)", digits = 1) %>% 
+  select(var, formatted_stats)
+```
+
+Number of issues managed
+
+```{r}
+class(v1$app_issues_sleep) <- "double"
+```
+
+
+```{r}
+v1 %>% 
+  select(id, app_use_f, starts_with("app_issues")) %>% 
+  filter(app_use_f == "Yes") %>% 
+  select(-ends_with("_f")) %>% 
+  mutate(
+    # Drop the haven labeled class so we can add them up
+    across(
+      starts_with("app_issues"),
+      function(x) {
+        class(x) <- "double"
+        x
+      }
+    )
+  ) %>% 
+  rowwise() %>% 
+  mutate(
+    app_issues_total = sum(c_across(app_issues_food:app_issues_other)),
+    app_issues_total_f = factor(app_issues_total, 1:9, 1:9)
+  ) %>% 
+  ungroup() %>% 
+  freq_table(app_issues_total_f) %>% 
+  freq_format("n (percent)", digits = 1) %>% 
+  select(var, cat, formatted_stats)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
