@@ -5,7 +5,13 @@ date: "2021-08-03 <br> Updated: `r Sys.Date()`"
 
 # Instructions
 
-Make any data updates you need to make in data_01_import_clean.Rmd. After that file has saved a new version of "/Volumes/sph_research/Link2Care/Statistical Projects/Montgomery - Smartphone/v1_clean.rds", you should just be able to click Run > Run All Chunks Below. This will create an updated Word document in the root directory called, "Smartphone Table Updates.docx".
+2022-12-11
+
+Originally, this R project was on Dropbox. On 2022-12-11, we moved it over to OneDrive at "L2C Teams/Abstract and Manuscripts/l2c_paper_smartphone_app". We also modified the file paths below.
+
+2021-08-03
+
+Make any data updates you need to make in data_01_import_clean.Rmd. After that file has saved a new version of `v1_clean.rds`, you should just be able to click Run > Run All Chunks Below. This will create an updated Word document in the root directory called, `Smartphone Table Updates.docx`.
 
 
 # ⭐️Overview
@@ -40,18 +46,14 @@ library(meantables)
 library(purrr)
 library(officer)
 library(flextable, warn.conflicts = FALSE)
+library(stringr)
+library(ggplot2)
+library(forcats)
+library(tidyr)
 ```
 
 ```{r}
 source("flextable_helpers.R")
-```
-
-
-# 🌎Connect to UTH server 
-
-```{bash eval=FALSE}
-# Make sure you are connected to the VPN
-open 'smb://islgpcifs.uthouston.edu/sph_research/'
 ```
 
 
@@ -60,11 +62,11 @@ open 'smb://islgpcifs.uthouston.edu/sph_research/'
 This data is created and saved in data_01_import_clean.Rmd
 
 ```{r}
-v1 <- read_rds("/Volumes/sph_research/Link2Care/Statistical Projects/Montgomery - Smartphone/v1_clean.rds")
+v1 <- read_rds("data/v1_clean.rds")
 ```
 
 ```{r}
-dim(v1) # 324  82
+dim(v1) # 324  86
 ```
 
 
@@ -125,6 +127,8 @@ cat_stats_fn <- function(.data, .outcome, .digits = 0) {
 
 ### Continuous statistics
 
+Except Lifetime months homeless and Lifetime years in jail. For those, Jordan wants the mean and IQR.
+
 ```{r eval=FALSE}
 # For testing
 v1 %>% 
@@ -149,6 +153,43 @@ cont_stats_fn <- function(.data, .outcome, .digits = 0) {
 
 # For testing
 # cont_stats_fn(v1, age, .digits = 1)
+```
+
+### Median and IQR statistics
+
+2022-01-03: For Lifetime months homeless and Lifetime years in jail Jordan wants the mean and IQR.
+
+```{r eval=FALSE}
+# For testing
+v1 %>% 
+  filter(!is.na(lifetime_homeless)) %>% 
+  summarise(
+    var = rlang::as_name(quo(lifetime_homeless)),
+    median = median(lifetime_homeless),
+    iqr = IQR(lifetime_homeless)
+  ) %>% 
+  mean_format("median (iqr)", digits = 1) %>% 
+  select(var, formatted_stats)
+```
+
+```{r}
+med_iqr_stats_fn <- function(.data, .outcome, .digits = 0) {
+  ..outcome <- enquo(.outcome) # Must do this to get var name below
+  .data %>% 
+    filter(!is.na({{ .outcome }})) %>%
+    summarise(
+      var = rlang::as_name(..outcome),
+      median = median({{ .outcome }}),
+      iqr = IQR({{ .outcome }})
+    ) %>% 
+    mean_format("median (iqr)", digits = .digits) %>% 
+    select(var, formatted_stats) %>%
+    # Add blank row below
+    add_row(var = "", formatted_stats = "")
+}
+
+# For testing
+# med_iqr_stats_fn(v1, lifetime_homeless, .digits = 1)
 ```
 
 ### Dummy variables
@@ -254,8 +295,12 @@ cat_cols <- c(
 
 ```{r}
 cont_cols <- c(
-  "age", "lifetime_homeless", "lifetime_jail", "phys_hlth_days", "ment_hlth_days"
+  "age", "phys_hlth_days", "ment_hlth_days"
 )
+```
+
+```{r}
+med_iqr_cols <- c("lifetime_homeless", "lifetime_jail")
 ```
 
 ```{r}
@@ -296,6 +341,17 @@ stats_list <- c(
 )
 ```
 
+Calculate median and IQR stats
+
+```{r}
+stats_list <- c(
+  stats_list,
+  med_iqr_cols %>%
+    set_names(med_iqr_cols) %>%
+    map(~ med_iqr_stats_fn(v1, !! sym(.x), .digits = 1))
+)
+```
+
 Calculate categorical stats for dummy variables
 
 ```{r}
@@ -307,7 +363,6 @@ stats_list <- c(
   )
 )
 ```
-
 
 #### Bind together categorical and continuous stats
 
@@ -336,17 +391,80 @@ table_1 <- map_dfr(
 )
 ```
 
+# Number of issues managed
+
+2022-01-03, from Jordan Neil 
+
+Brad, sorry to ask this again as you provided it for Jillian’s paper, but for this manuscript can you:
+1. Provide Mdn and IQR for: Lifetime months homeless and Lifetime years in jail?
+2. Create a category that reports participants number of issues managed by a smartphone app? i.e., we currently have it broken down by issue, but could you also provide how many managed 2 issues, 3 issues, 4 issues, etc.?
+
+We already handled the median and IQR thing above.
+
+We are adding number of issues managed separately here instead of with the rest of the categorical variables above for two reasons.
+1. We need to drop the rows with app_use_f == "Yes".
+2. We need to keep drop = FALSE in freq_table.
+
+```{r}
+n_issues_managed <- v1 %>% 
+  filter(app_use_f == "Yes") %>% 
+  freq_table(app_issues_total_f) %>% 
+  freq_format("n (percent)", digits = 1) %>% 
+  select(var, cat, formatted_stats) %>% 
+  # Add two spaces in front of categories. This is to reduce the amount of 
+  # formatting we have to do in Word. The spaces won't be visible while testing
+  # in RStudio, but they will show up in the Word document
+  mutate(cat = paste0("  ", cat)) %>% 
+  # Add top row to contain the var name in the cat column. This is to 
+  # reduce the amount of formatting we have to do in Word. 
+  add_row(cat = .$var[1], .before = 1) %>% 
+  # Now drop var
+  select(-var, var = cat) %>% 
+  # Add blank row below
+  add_row(var = "", formatted_stats = "")
+```
+
+After looking at the figure we are creating for this variable, I think the more honest way to present it is with zero as a category as well. However, I'm keeping both versions here in case the team chooses not to do that.
+
+```{r}
+n_issues_managed_zero <- v1 %>%
+  filter(!is.na(app_issues_total_zero_f)) %>% 
+  freq_table(app_issues_total_zero_f) %>% 
+  freq_format("n (percent)", digits = 1) %>% 
+  select(var, cat, formatted_stats) %>% 
+  # Add two spaces in front of categories. This is to reduce the amount of 
+  # formatting we have to do in Word. The spaces won't be visible while testing
+  # in RStudio, but they will show up in the Word document
+  mutate(cat = paste0("  ", cat)) %>% 
+  # Add top row to contain the var name in the cat column. This is to 
+  # reduce the amount of formatting we have to do in Word. 
+  add_row(cat = .$var[1], .before = 1) %>% 
+  # Now drop var
+  select(-var, var = cat) %>% 
+  # Add blank row below
+  add_row(var = "", formatted_stats = "")
+```
+
+Bind number n_issues_managed to the bottom of table_1
+
+```{r}
+table_1 <- table_1 %>% 
+  bind_rows(n_issues_managed) %>% 
+  bind_rows(n_issues_managed_zero)
+```
+
 Remove the final blank row. It makes the Word table look cleaner.
 
 ```{r}
 table_1 <- slice(table_1, -nrow(table_1))
 ```
 
+
 # Format tables
 
 To reduce the amount of formatting that needs to be done in word. 
 
-### Make variable names easier for end users to read
+## Make variable names easier for end users to read
 
 We want to make variable names easier for end users to read and also add the statistics used to the row headers.
 
@@ -356,27 +474,27 @@ change_row_names <- function(.data) {
     mutate(var = case_when(
       # Sociodemographics
       var == "age" ~ "Age, mean (sd)",
-      var == "gender_f" ~ "Gender, n (percent)",
-      var == "race_eth_4_cat_f" ~ "Race/Ethnicity, n (percent)",
-      var == "high_school_grad_f" ~ "High school grad or GED, n (percent)",
-      var == "employ_5_cat_f" ~ "Employment status, n (percent)",
-      var == "lifetime_homeless" ~ "Lifetime months homeless, mean (sd)",
-      var == "lifetime_jail" ~ "Lifetime years in jail, mean (sd)",
+      var == "gender_f" ~ "Gender, n (%)",
+      var == "race_eth_4_cat_f" ~ "Race/Ethnicity, n (%)",
+      var == "high_school_grad_f" ~ "High school grad or GED, n (%)",
+      var == "employ_5_cat_f" ~ "Employment status, n (%)",
+      var == "lifetime_homeless" ~ "Lifetime months homeless, median (IQR)",
+      var == "lifetime_jail" ~ "Lifetime years in jail, median (IQR)",
       
       # Health
-      var == "genhealth_f" ~ "General health, n (percent)",
+      var == "genhealth_f" ~ "General health, n (%)",
       var == "phys_hlth_days" ~ "N days out of past 30 physical health not good, mean (sd)", 
       var == "ment_hlth_days" ~ "N days out of past 30 mental health not good, mean (sd)",
-      var == "ment_health_treat_f" ~ "Mental health treatment, n (percent)",
+      var == "ment_health_treat_f" ~ "Mental health treatment, n (%)",
       
       # Technology use
-      var == "mobile_have_f" ~ "Have mobile phone, n (percent)",
-      var == "mobile_pays_f" ~ "Mobile phone bill payer, n (percent)",
-      var == "mobile_talk_min_f" ~ "Talk minutes in mobile plan, n (percent)", 
-      var == "mobile_smart_f" ~ "Is mobile phone a smart phone, n (percent)",
-      var == "mobile_have_data_plan_f" ~ "Have data plan, n (percent)",
-      var == "mobile_number_change_f" ~ "N times mobile number has changed, n (percent)", 
-      var == "media_types" ~ "Types of media used, n (percent)",
+      var == "mobile_have_f" ~ "Have mobile phone, n (%)",
+      var == "mobile_pays_f" ~ "Mobile phone bill payer, n (%)",
+      var == "mobile_talk_min_f" ~ "Talk minutes in mobile plan, n (%)", 
+      var == "mobile_smart_f" ~ "Is mobile phone a smart phone, n (%)",
+      var == "mobile_have_data_plan_f" ~ "Have data plan, n (%)",
+      var == "mobile_number_change_f" ~ "N times mobile number has changed, n (%)", 
+      var == "media_types" ~ "Types of media used, n (%)",
       var == "  sm_email_f" ~ "  Email", 
       var == "  sm_facebook_f" ~ "  Facebook", 
       var == "  sm_google_plus_f" ~ "  Google Plus",
@@ -386,11 +504,11 @@ change_row_names <- function(.data) {
       var == "  sm_snapchat_f" ~ "  Snapchat",
       var == "  sm_linkedin_f" ~ "  LinkedIn",
       var == "  sm_none_f" ~ "  None",
-      var == "access_internet_freq_f" ~ "Frequency of internet access, n (percent)",
-      var == "facebook_freq_f" ~ "Frequency of Facebook use, n (percent)",
-      var == "app_change_f" ~ "Believe smartphone app can help change actions or behaviors, n (percent)",
-      var == "app_use_f" ~ "used smartphone app to manage health-related issues, n (percent)",
-      var == "app_health_issue" ~ "Type of issue managed with smartphone app, n (percent)",
+      var == "access_internet_freq_f" ~ "Frequency of internet access, n (%)",
+      var == "facebook_freq_f" ~ "Frequency of Facebook use, n (%)",
+      var == "app_change_f" ~ "Believe smartphone app can help change actions or behaviors, n (%)",
+      var == "app_use_f" ~ "used smartphone app to manage health-related issues, n (%)",
+      var == "app_health_issue" ~ "Type of issue managed with smartphone app, n (%)",
       var == "  app_issues_food_f" ~ "  Food or calorie tracking",
       var == "  app_issues_medication_f" ~ "  Medication reminders",
       var == "  app_issues_mood_f" ~ "  Mood manager",
@@ -400,6 +518,8 @@ change_row_names <- function(.data) {
       var == "  app_issues_stress_f" ~ "  Stress reduction",
       var == "  app_issues_weight_f" ~ "  Weight loss tracking",
       var == "  app_issues_other_f" ~ "  Other",
+      var == "app_issues_total_f" ~ "Number of issues managed with smartphone app, n (%)",
+      var == "app_issues_total_zero_f" ~ "Number of issues managed with smartphone app, n (%)",
       TRUE ~ var
     ))
 }
@@ -432,16 +552,809 @@ table_1_ft <- flextable(table_1) %>%
   ) %>% 
   # Bold column headers
   bold(part = "header") %>% 
+  # To figure out the values for i (rows), it's easiest to open table_1 in the
+  # viewer window and use the row numbers on the left-hand side to get the row
+  # number for the variable we want to add a footnote to.
   footnote(
-    i = c(67, 80, 119), j = 1,
+    i = c(67, 80, 119, 130), j = 1,
     value = as_paragraph(c(
       "Have data plan was only asked of participants who reported having a mobile phone.",
       "Percentages sum to >100% because participants could select more than one response option.",
-      "Percentages sum to >100% because participants could select more than one response option."
-    ))
+      "Percentages sum to >100% because participants could select more than one response option.",
+      "Among participants who reported managing any issues with smartphone app."
+    )),
+    # Must add this line or you will get a subscript out of bounds error.
+    ref_symbols = c("1", "2", "3", "4")
   ) %>% 
   my_ft_theme()
 ```
+
+
+# R&R for Journal of Technology in Behavioral Science
+
+We got an R&R for the paper listed in the title line above on 2022-12-06. This section contains some calculations needed for that R&R.
+
+## Create figures
+
+Written In response to reviewers: We have now added a bar graph to visualize (1) type of health-related issues previously managed using a smartphone app (app_issues_food_f:app_issues_other_f) and (2) number of health-related issues managed (app_issues_total_f). Please see Figure 1.
+
+Type of health-related issues previously managed using a smartphone app
+
+```{r}
+p_app_health_issue <- table_1 %>% 
+  # Keep the rows of interest from Table 1
+  # Easiest way to get these row numbers is to view table 1 in the viewer
+  # window and use the row numbers on the left-hand side.
+  slice(119:128) %>% 
+  # Keep only the percentages from the formatted_stats column, which is
+  # currently character values.
+  mutate(
+    percent = str_replace(formatted_stats, "(\\d\\d \\()(\\d\\d\\.\\d)(\\))", "\\2"),
+    percent = as.numeric(percent)
+  ) %>% 
+  # Remove the row with the var description
+  slice(2:10) %>% 
+  # Order from highest to lowest
+  arrange(desc(percent)) %>% 
+  mutate(var_f = fct_reorder(var, percent)) %>% 
+  
+  # Create plot
+  ggplot(aes(x = var_f, y = percent)) +
+    geom_bar(stat = "identity") +
+    geom_label(aes(label = percent)) +
+    coord_flip() +
+    labs(
+      # X in plot, but Y before flipping coordinates
+      y = "Percent of Participants",
+      x = "Type of Issue Managed with Smartphone App"
+    ) +
+    theme_classic()
+
+# For testing
+# p_app_health_issue
+```
+
+Save figure for copy and paste into report
+
+```{r}
+ggsave("fig_app_health_issue.jpeg", p_app_health_issue, width = 7, height = 4)
+```
+
+Number of health-related issues managed
+
+```{r}
+p_app_issues_total <- table_1 %>% 
+  # Keep the rows of interest from Table 1
+  # Easiest way to get these row numbers is to view table 1 in the viewer
+  # window and use the row numbers on the left-hand side.
+  slice(130:139) %>% 
+  # Keep only the percentages from the formatted_stats column, which is
+  # currently character values.
+  mutate(
+    percent = str_replace(formatted_stats, "(\\d+ \\()(\\d+\\.\\d)(\\))", "\\2"),
+    percent = as.numeric(percent)
+  ) %>% 
+  # Remove the row with the var description
+  slice(2:10) %>% 
+  
+  # Create plot
+  ggplot(aes(x = var, y = percent)) +
+    geom_bar(stat = "identity") +
+    geom_label(aes(label = percent)) +
+    labs(
+      # X in plot, but Y before flipping coordinates
+      y = "Percent of Participants",
+      x = "Number of Issues Managed With Smartphone App"
+    ) +
+    theme_classic()
+
+# For testing
+# p_app_issues_total
+```
+
+Save figure for copy and paste into report
+
+```{r}
+ggsave("fig_app_issues_total.jpeg", p_app_issues_total, width = 7, height = 4)
+```
+
+After looking at the figure we are creating for this variable, I think the more honest way to present it is with zero as a category as well. However, I'm keeping both versions here in case the team chooses not to do that.
+
+Number of health-related issues managed (including zero)
+
+```{r}
+p_app_issues_total_zero <- table_1 %>% 
+  # Keep the rows of interest from Table 1
+  # Easiest way to get these row numbers is to view table 1 in the viewer
+  # window and use the row numbers on the left-hand side.
+  slice(141:151) %>% 
+  # Keep only the percentages from the formatted_stats column, which is
+  # currently character values.
+  mutate(
+    percent = str_replace(formatted_stats, "(\\d+ \\()(\\d+\\.\\d)(\\))", "\\2"),
+    percent = as.numeric(percent)
+  ) %>% 
+  # Remove the row with the var description
+  slice(2:11) %>% 
+  
+  # Create plot
+  ggplot(aes(x = var, y = percent)) +
+    geom_bar(stat = "identity") +
+    geom_label(aes(label = percent)) +
+    labs(
+      # X in plot, but Y before flipping coordinates
+      y = "Percent of Participants",
+      x = "Number of Issues Managed With Smartphone App"
+    ) +
+    theme_classic()
+
+# For testing
+# p_app_issues_total_zero
+```
+
+Save figure for copy and paste into report
+
+```{r}
+ggsave("fig_app_issues_total_zero.jpeg", p_app_issues_total_zero, width = 7, height = 4)
+```
+
+## Additional crosstabs
+
+We need to cross-tab some of the data to be able to answer these questions. Brad, can you run these simple descriptives? 
+
+* Paragraph on "internet use was common in this sample". The disconnect for me regarding this paragraph is whether people accessed the internet on their phone or somewhere else (e.g., a public library). Could you look to see if the 28.4% of participants who had an active phone were MORE likely to go online compared to those who did not have an active phone? Were they more likely to use social media? More likely to be the ones who looked at social media more frequently? Could you start with those results and then move into "those who had an active facebook account…"
+Methods need to be more clear if when asking the questions about using email and social media was this explicitly over a phone?
+
+* Something that would contribute greatly to the literature is a better understanding of the population who currently reported having a cell phone. Could you provide a table just on this population? For example, it looks like for eligibility they needed to be less than 60 days from release- for these 28.6% who had a current phone, where were they in terms of their release date? Are they more likely to be young? Have less incarceration experiences? Etc.
+
+* Add table specific to those who currently had a cell phone?
+See suggested edits to table 2 above. For table 4, do you need to report the "9 issues managed" since it equals 0?
+
+### Access internet by mobile phone ownership
+
+Create a variable for any internet use
+
+```{r}
+v1 <- v1 %>% 
+  mutate(
+    access_internet_dichot = if_else(access_internet_freq_f == "Never", 0, 1),
+    access_internet_dichot_f = factor(access_internet_dichot, 0:1, c("No", "Yes"))
+  )
+```
+
+```{r}
+table_internet_by_phone <- v1 %>% 
+  freq_table(mobile_have_f, access_internet_dichot_f) %>% 
+  select(row_var:n_row, percent_row) %>% 
+  filter(col_cat == "Yes")
+```
+
+```{r}
+table_internet_by_phone_ft <- flextable(table_internet_by_phone) %>% 
+  # Change column widths. figure out through trial and error
+  width(width = c(1.13, 0.67, 1.83, 0.62, 0.62, 0.64, 0.98))
+```
+
+### Social media use by mobile phone ownership
+
+Create variable for any social media use
+
+```{r}
+v1 <- v1 %>% 
+  mutate(
+    sm_use_any = if_else(sm_none_f == "No", 1, 0),
+    sm_use_any_f = factor(sm_use_any, 0:1, c("No", "Yes"))
+  )
+```
+
+```{r}
+table_sm_by_phone <- v1 %>% 
+  freq_table(mobile_have_f, sm_use_any_f) %>% 
+  select(row_var:n_row, percent_row) %>% 
+  filter(col_cat == "Yes")
+```
+
+```{r}
+table_sm_by_phone_ft <- flextable(table_sm_by_phone) %>% 
+  # Change column widths. figure out through trial and error
+  width(width = c(1.13, 0.81, 1.13, 0.81, 0.81, 0.81, 0.98))
+```
+
+### Characteristics of people with and without a mobile phone
+
+#### Create helper functions
+
+For calculating statistics of interest.
+
+##### Categorical statistics
+
+```{r eval=FALSE}
+# For testing
+v1 %>% 
+  filter(!is.na(app_use_f)) %>% 
+  freq_table(mobile_have_f, app_use_f, drop = TRUE) %>% 
+  freq_format("n (percent_row)", digits = 1) %>% 
+  select(row_var:col_cat, formatted_stats) %>% 
+  # Merge row_var and row_cat into one
+  unite(row, c(row_var, row_cat)) %>% 
+  # Make have_mobile into column headers
+  pivot_wider(
+    names_from = "row",
+    values_from = "formatted_stats"
+  ) %>% 
+  # Add two spaces in front of categories. This is to reduce the amount of 
+  # formatting we have to do in Word. The spaces won't be visible while testing
+  # in RStudio, but they will show up in the Word document
+  mutate(col_cat = paste0("  ", col_cat)) %>% 
+  # Add top row to contain the var name in the col_cat column. This is to 
+  # reduce the amount of formatting we have to do in Word. 
+  add_row(col_cat = .$col_var[1], .before = 1) %>% 
+  # Now drop var
+  select(-col_var, var = col_cat) %>% 
+  # Add blank row below
+  add_row()
+```
+
+```{r}
+cat_stats_fn <- function(.data, .pred, .outcome, .digits = 0) {
+  .data %>% 
+    filter(!is.na({{ .outcome }})) %>% 
+    freq_table({{ .pred }}, {{ .outcome }}, drop = FALSE) %>%
+    freq_format("n (percent_row)", digits = .digits) %>% 
+    select(row_var:col_cat, formatted_stats) %>% 
+    # Merge row_var and row_cat into one
+    unite(row, c(row_var, row_cat)) %>% 
+    # Make have_mobile into column headers
+    pivot_wider(
+      names_from = "row",
+      values_from = "formatted_stats"
+    ) %>%  
+    # Add two spaces in front of categories. This is to reduce the amount of 
+    # formatting we have to do in Word. The spaces won't be visible while testing
+    # in RStudio, but they will show up in the Word document
+    mutate(col_cat = paste0("  ", col_cat)) %>% 
+    # Add top row to contain the var name in the col_cat column. This is to 
+    # reduce the amount of formatting we have to do in Word. 
+    add_row(col_cat = .$col_var[1], .before = 1) %>% 
+    # Now drop var
+    select(-col_var, var = col_cat) %>% 
+    # Add blank row below
+    add_row()
+}
+
+# For testing
+# cat_stats_fn(v1, mobile_have_f, app_issues_other_f, .digits = 1)
+# cat_stats_fn(v1, !!sym("mobile_have_f"), !!sym("gender_f"))
+```
+
+##### Continuous statistics
+
+Except Lifetime months homeless and Lifetime years in jail. For those, Jordan wants the mean and IQR.
+
+```{r eval=FALSE}
+# For testing
+v1 %>% 
+  filter(!is.na(age)) %>% 
+  group_by(mobile_have_f) %>% 
+  mean_table(age) %>% 
+  mean_format("mean (sd)", digits = 1) %>% 
+  select(response_var:group_cat, formatted_stats) %>% 
+  # Merge row_var and row_cat into one
+  unite(group, c(group_var, group_cat)) %>% 
+  # Make have_mobile into column headers
+  pivot_wider(
+    names_from = "group",
+    values_from = "formatted_stats"
+  ) %>%
+  # Add blank row below
+  add_row()
+```
+
+```{r}
+cont_stats_fn <- function(.data, .pred, .outcome, .digits = 0) {
+  .data %>% 
+    filter(!is.na({{ .outcome }})) %>%
+    group_by({{ .pred}} ) %>% 
+    mean_table({{ .outcome }}) %>%
+    mean_format("mean (sd)", digits = .digits) %>% 
+    select(response_var:group_cat, formatted_stats) %>% 
+    # Merge row_var and row_cat into one
+    unite(group, c(group_var, group_cat)) %>% 
+    # Make have_mobile into column headers
+    pivot_wider(
+      names_from = "group",
+      values_from = "formatted_stats"
+    ) %>%
+    # For row binding later
+    rename(var = response_var) %>% 
+    # Add blank row below
+    add_row()
+}
+
+# For testing
+cont_stats_fn(v1, mobile_have_f, age, .digits = 1)
+```
+
+##### Median and IQR statistics
+
+2022-01-03: For Lifetime months homeless and Lifetime years in jail Jordan wants the mean and IQR.
+
+```{r eval=FALSE}
+# For testing
+v1 %>% 
+  filter(!is.na(lifetime_homeless)) %>% 
+  group_by(mobile_have_f) %>%
+  summarise(
+    var = rlang::as_name(quo(lifetime_homeless)),
+    median = median(lifetime_homeless),
+    iqr = IQR(lifetime_homeless)
+  ) %>% 
+  mean_format("median (iqr)", digits = 1) %>% 
+  select(1, var, formatted_stats) %>% 
+  # Make have_mobile into column headers
+  pivot_wider(
+    names_from = 1,
+    names_prefix = "mobile_have_f_",
+    values_from = "formatted_stats"
+  ) %>%
+  # Add blank row below
+  add_row()
+```
+
+```{r}
+med_iqr_stats_fn <- function(.data, .pred, .outcome, .digits = 0) {
+  ..outcome <- enquo(.outcome) # Must do this to get var name below
+  ..pred <- enquo(.pred)
+  
+  .data %>% 
+    filter(!is.na({{ .outcome }})) %>%
+    group_by({{ .pred }}) %>%
+    summarise(
+      var = rlang::as_name(..outcome),
+      median = median({{ .outcome }}),
+      iqr = IQR({{ .outcome }})
+    ) %>% 
+    mean_format("median (iqr)", digits = .digits) %>% 
+    select(1, var, formatted_stats) %>% 
+    # Make have_mobile into column headers
+    pivot_wider(
+      names_from = 1,
+      names_prefix = paste0(rlang::as_name(..pred), "_"),
+      values_from = "formatted_stats"
+    ) %>%
+    # Add blank row below
+    add_row()
+}
+
+# For testing
+med_iqr_stats_fn(v1, mobile_have_f, lifetime_homeless, .digits = 1)
+```
+
+##### Dummy variables
+
+The "Which of the following forms of media do you use?" and the "What type of health related issue?" questions both allow multiple answers. This results in dummy variables for each possible response option. For example:
+
+|------------|:--------:|
+| sm_email_f | NA       |
+| No         | 74 (23)  |
+| Yes        | 250 (77) |
+
+Instead, we want to treat each of the "yes" rows for each of the individual dummy variables as though they were categories of a higher level variable. For example:
+
+|--------------|:--------:|
+| Use media    | NA       |
+|   Email      | 250 (77) |
+|   Twitter    | 29 (9)   |
+
+```{r eval=FALSE}
+# For testing
+v1 %>% 
+  filter(!is.na(sm_email_f)) %>% 
+  freq_table(mobile_have_f, sm_email_f, drop = TRUE) %>% 
+  freq_format("n (percent_row)", digits = 1) %>% 
+  # Only keep the "Yes" row
+  filter(col_cat == "Yes") %>% 
+  select(row_var:col_var, formatted_stats) %>%
+  # Merge row_var and row_cat into one
+  unite(row, c(row_var, row_cat)) %>% 
+  # Make have_mobile into column headers
+  pivot_wider(
+    names_from = "row",
+    values_from = "formatted_stats"
+  ) %>%
+  # Add two spaces in front of categories. This is to reduce the amount of 
+  # formatting we have to do in Word. The spaces won't be visible while testing
+  # in RStudio, but they will show up in the Word document
+  mutate(col_var = paste0("  ", col_var)) %>% 
+  rename(var = col_var)
+```
+
+```{r}
+# Function to calculate the stats of interest for a single dummy variable
+dummy_stats_fn <- function(.data, .pred, .outcome, .digits = 0) {
+  .data %>% 
+    filter(!is.na({{ .outcome }})) %>% 
+    freq_table({{ .pred}}, {{ .outcome }}, drop = FALSE) %>% 
+    freq_format("n (percent_row)", digits = 1) %>%
+    # Only keep the "Yes" row
+    filter(col_cat == "Yes") %>% 
+    select(row_var:col_var, formatted_stats) %>%
+    # Merge row_var and row_cat into one
+    unite(row, c(row_var, row_cat)) %>% 
+    # Make have_mobile into column headers
+    pivot_wider(
+      names_from = "row",
+      values_from = "formatted_stats"
+    ) %>%
+    # Add two spaces in front of categories. This is to reduce the amount of 
+    # formatting we have to do in Word. The spaces won't be visible while testing
+    # in RStudio, but they will show up in the Word document
+    mutate(col_var = paste0("  ", col_var)) %>% 
+    rename(var = col_var)
+}
+
+# For testing
+# dummy_stats_fn(v1, mobile_have_f, sm_email_f, .digits = 1)
+```
+
+Apply dummy_stats_fn to multiple dummy variables and bind the results together as though they were categories of a single variable. 
+
+```{r}
+# For testing
+map_df(
+  .x = c("sm_email_f", "sm_facebook_f"),
+  .f = ~ dummy_stats_fn(v1, !! sym("mobile_have_f"), !! sym(.x))
+) %>% 
+  # Add text indicating the name of the higher-level parent question to the first
+  # row of the data frame
+  add_row(var = "media_types", .before = 1) %>% 
+  # Add blank row below
+  add_row()
+```
+
+```{r}
+dummies_stats_fn <- function(.data, .pred, .parent_q, .dummies, .digits = 0) {
+  map_df(
+    .x = .dummies,
+    .f = ~ dummy_stats_fn(.data, !! sym(.pred), !! sym(.x), .digits = .digits)
+  ) %>% 
+    # Add text indicating the name of the higher-level parent question to the first
+    # row of the data frame
+    add_row(var = .parent_q, .before = 1) %>% 
+    # Add blank row below
+    add_row()
+}
+
+# For testing
+# dummies_stats_fn(v1, "mobile_have_f", "media_types", c("sm_email_f", "sm_facebook_f"), .digits = 1)
+```
+
+#### Create data frames of stats for tables
+
+```{r}
+# For checking
+# select(v1, ends_with("_f")) %>% names()
+# select(v1, where(~ !("haven_labelled" %in% class(.x)) && !is.factor(.x)))
+```
+
+```{r}
+cat_cols <- c(
+  "gender_f", "race_eth_4_cat_f", "high_school_grad_f", "employ_5_cat_f", 
+  "genhealth_f", "ment_health_treat_f", "mobile_pays_f",
+  "mobile_talk_min_f", "mobile_smart_f", "mobile_have_data_plan_f", 
+  "mobile_number_change_f", "access_internet_freq_f", "facebook_freq_f", 
+  "app_change_f", "app_use_f"
+)
+```
+
+```{r}
+cont_cols <- c(
+  "age", "phys_hlth_days", "ment_hlth_days"
+)
+```
+
+```{r}
+med_iqr_cols <- c("lifetime_homeless", "lifetime_jail")
+```
+
+```{r}
+dummy_cols <- list(
+  # Which of the following forms of media do you use?
+  media_types = c(
+  "sm_email_f", "sm_facebook_f", "sm_google_plus_f", "sm_twitter_f", 
+  "sm_blogs_f","sm_instagram_f", "sm_snapchat_f", "sm_linkedin_f", "sm_none_f"
+  ),
+  
+  # What type of health related issue? [use smartphone app to manage]
+  app_health_issue = c(
+  "app_issues_food_f", "app_issues_medication_f", "app_issues_mood_f", 
+  "app_issues_phys_act_f", "app_issues_sleep_f", "app_issues_smoking_f", 
+  "app_issues_stress_f", "app_issues_weight_f", "app_issues_other_f"
+  )
+)
+```
+
+#### Create lists of statistics of interest
+
+```{r}
+pred <- "mobile_have_f"
+```
+
+Calculate categorical stats
+
+```{r}
+# Remove Don't know, etc. as categories from app_change_f and app_use_f
+v1 <- v1 %>% 
+  mutate(
+    across(
+      c(app_change_f, app_use_f),
+      ~ fct_drop(.x)
+    )
+  )
+```
+
+
+```{r}
+stats_list <- cat_cols %>%
+  set_names(cat_cols) %>% 
+  map(~ cat_stats_fn(v1, !! sym("mobile_have_f"), !! sym(.x), .digits = 1))
+```
+
+Calculate continuous stats
+
+```{r}
+stats_list <- c(
+  stats_list,
+  cont_cols %>%
+    set_names(cont_cols) %>%
+    map(~ cont_stats_fn(v1, !! sym("mobile_have_f"), !! sym(.x), .digits = 1))
+)
+```
+
+Calculate median and IQR stats
+
+```{r}
+stats_list <- c(
+  stats_list,
+  med_iqr_cols %>%
+    set_names(med_iqr_cols) %>%
+    map(~ med_iqr_stats_fn(v1, !! sym("mobile_have_f"), !! sym(.x), .digits = 1))
+)
+```
+
+Calculate categorical stats for dummy variables
+
+```{r}
+stats_list <- c(
+  stats_list,
+  imap(
+    dummy_cols,
+    ~ dummies_stats_fn(v1, .pred = "mobile_have_f", .y, .x, .digits = 1)
+  )
+)
+```
+
+#### Bind together categorical and continuous stats
+
+```{r}
+# Use this later to reorder the variables in the tables
+variable_order <- c(
+  # Sociodemographics
+  "age", "gender_f", "race_eth_4_cat_f", "high_school_grad_f", "employ_5_cat_f",
+  "lifetime_homeless", "lifetime_jail",
+  
+  # Health
+  "genhealth_f", "phys_hlth_days", "ment_hlth_days", "ment_health_treat_f",
+  
+  # Technology use
+  "mobile_pays_f",
+  "mobile_talk_min_f", "mobile_smart_f", "mobile_have_data_plan_f", 
+  "mobile_number_change_f", "media_types", "access_internet_freq_f", 
+  "facebook_freq_f", "app_change_f", "app_use_f", "app_health_issue"
+)
+```
+
+```{r}
+table_1_by_phone <- map_dfr(
+  .x = variable_order,
+  .f = ~ bind_rows(stats_list[[.x]])
+)
+```
+
+#### Number of issues managed
+
+2022-01-03, from Jordan Neil 
+
+Brad, sorry to ask this again as you provided it for Jillian’s paper, but for this manuscript can you:
+1. Provide Mdn and IQR for: Lifetime months homeless and Lifetime years in jail?
+2. Create a category that reports participants number of issues managed by a smartphone app? i.e., we currently have it broken down by issue, but could you also provide how many managed 2 issues, 3 issues, 4 issues, etc.?
+
+We already handled the median and IQR thing above.
+
+We are adding number of issues managed separately here instead of with the rest of the categorical variables above for two reasons.
+1. We need to drop the rows with app_use_f == "Yes".
+2. We need to keep drop = FALSE in freq_table.
+
+```{r}
+n_issues_managed <- v1 %>% 
+  filter(app_use_f == "Yes") %>% 
+  freq_table(mobile_have_f, app_issues_total_f) %>% 
+  freq_format("n (percent_row)", digits = 1) %>% 
+  select(row_var:col_cat, formatted_stats) %>%
+  # Merge row_var and row_cat into one
+  unite(row, c(row_var, row_cat)) %>% 
+  # Make have_mobile into column headers
+  pivot_wider(
+    names_from = "row",
+    values_from = "formatted_stats"
+  ) %>% 
+  # Add two spaces in front of categories. This is to reduce the amount of 
+  # formatting we have to do in Word. The spaces won't be visible while testing
+  # in RStudio, but they will show up in the Word document
+  mutate(col_cat = paste0("  ", col_cat)) %>% 
+  # Add top row to contain the var name in the col_cat column. This is to 
+  # reduce the amount of formatting we have to do in Word. 
+  add_row(col_cat = .$col_var[1], .before = 1) %>% 
+  # Now drop var
+  select(-col_var, var = col_cat) %>% 
+  # Add blank row below
+  add_row()
+```
+
+After looking at the figure we are creating for this variable, I think the more honest way to present it is with zero as a category as well. However, I'm keeping both versions here in case the team chooses not to do that.
+
+```{r}
+n_issues_managed_zero <- v1 %>%
+  filter(!is.na(app_issues_total_zero_f)) %>% 
+  freq_table(mobile_have_f, app_issues_total_zero_f) %>% 
+  freq_format("n (percent_row)", digits = 1) %>% 
+  select(row_var:col_cat, formatted_stats) %>%
+  # Merge row_var and row_cat into one
+  unite(row, c(row_var, row_cat)) %>% 
+  # Make have_mobile into column headers
+  pivot_wider(
+    names_from = "row",
+    values_from = "formatted_stats"
+  ) %>% 
+  # Add two spaces in front of categories. This is to reduce the amount of 
+  # formatting we have to do in Word. The spaces won't be visible while testing
+  # in RStudio, but they will show up in the Word document
+  mutate(col_cat = paste0("  ", col_cat)) %>% 
+  # Add top row to contain the var name in the col_cat column. This is to 
+  # reduce the amount of formatting we have to do in Word. 
+  add_row(col_cat = .$col_var[1], .before = 1) %>% 
+  # Now drop var
+  select(-col_var, var = col_cat) %>% 
+  # Add blank row below
+  add_row()
+```
+
+Bind number n_issues_managed to the bottom of table_1_by_phone
+
+```{r}
+table_1_by_phone <- table_1_by_phone %>% 
+  bind_rows(n_issues_managed) %>% 
+  bind_rows(n_issues_managed_zero)
+```
+
+Remove the final blank row. It makes the Word table look cleaner.
+
+```{r}
+table_1_by_phone <- slice(table_1_by_phone, -nrow(table_1_by_phone))
+```
+
+#### Format tables
+
+To reduce the amount of formatting that needs to be done in word. 
+
+##### Make variable names easier for end users to read
+
+We want to make variable names easier for end users to read and also add the statistics used to the row headers.
+
+```{r}
+change_row_names <- function(.data) {
+  .data %>% 
+    mutate(var = case_when(
+      # Sociodemographics
+      var == "age" ~ "Age, mean (sd)",
+      var == "gender_f" ~ "Gender, n (%)",
+      var == "race_eth_4_cat_f" ~ "Race/Ethnicity, n (%)",
+      var == "high_school_grad_f" ~ "High school grad or GED, n (%)",
+      var == "employ_5_cat_f" ~ "Employment status, n (%)",
+      var == "lifetime_homeless" ~ "Lifetime months homeless, median (IQR)",
+      var == "lifetime_jail" ~ "Lifetime years in jail, median (IQR)",
+      
+      # Health
+      var == "genhealth_f" ~ "General health, n (%)",
+      var == "phys_hlth_days" ~ "N days out of past 30 physical health not good, mean (sd)", 
+      var == "ment_hlth_days" ~ "N days out of past 30 mental health not good, mean (sd)",
+      var == "ment_health_treat_f" ~ "Mental health treatment, n (%)",
+      
+      # Technology use
+      var == "mobile_have_f" ~ "Have mobile phone, n (%)",
+      var == "mobile_pays_f" ~ "Mobile phone bill payer, n (%)",
+      var == "mobile_talk_min_f" ~ "Talk minutes in mobile plan, n (%)", 
+      var == "mobile_smart_f" ~ "Is mobile phone a smart phone, n (%)",
+      var == "mobile_have_data_plan_f" ~ "Have data plan, n (%)",
+      var == "mobile_number_change_f" ~ "N times mobile number has changed, n (%)", 
+      var == "media_types" ~ "Types of media used, n (%)",
+      var == "  sm_email_f" ~ "  Email", 
+      var == "  sm_facebook_f" ~ "  Facebook", 
+      var == "  sm_google_plus_f" ~ "  Google Plus",
+      var == "  sm_twitter_f" ~ "  Twitter",
+      var == "  sm_blogs_f" ~ "  Blogs",
+      var == "  sm_instagram_f" ~ "  Instagram",
+      var == "  sm_snapchat_f" ~ "  Snapchat",
+      var == "  sm_linkedin_f" ~ "  LinkedIn",
+      var == "  sm_none_f" ~ "  None",
+      var == "access_internet_freq_f" ~ "Frequency of internet access, n (%)",
+      var == "facebook_freq_f" ~ "Frequency of Facebook use, n (%)",
+      var == "app_change_f" ~ "Believe smartphone app can help change actions or behaviors, n (%)",
+      var == "app_use_f" ~ "used smartphone app to manage health-related issues, n (%)",
+      var == "app_health_issue" ~ "Type of issue managed with smartphone app, n (%)",
+      var == "  app_issues_food_f" ~ "  Food or calorie tracking",
+      var == "  app_issues_medication_f" ~ "  Medication reminders",
+      var == "  app_issues_mood_f" ~ "  Mood manager",
+      var == "  app_issues_phys_act_f" ~ "  Physical activity",
+      var == "  app_issues_sleep_f" ~ "  Sleep tracker",
+      var == "  app_issues_smoking_f" ~ "  Smoking Cessation",
+      var == "  app_issues_stress_f" ~ "  Stress reduction",
+      var == "  app_issues_weight_f" ~ "  Weight loss tracking",
+      var == "  app_issues_other_f" ~ "  Other",
+      var == "app_issues_total_f" ~ "Number of issues managed with smartphone app, n (%)",
+      var == "app_issues_total_zero_f" ~ "Number of issues managed with smartphone app, n (%)",
+      TRUE ~ var
+    ))
+}
+
+# For testing
+# change_row_names(table_1)
+```
+
+```{r}
+table_1_by_phone <- change_row_names(table_1_by_phone)
+```
+
+#### Create flextables
+
+All the stats are stored in data frames. Next, we will convert those data frames to flextables that we can add to our Word document template.
+
+```{r}
+# For column header
+n_outcome <- table(v1$mobile_have_f)
+```
+
+```{r}
+table_1_by_phone_ft <- flextable(table_1_by_phone) %>%
+  # Change column widths. figure out through trial and error
+  width(width = c(4.69, 1.31, 1.07)) %>%
+  # Center the final two columns
+  align(j = c(2, 3), align = "center", part = "all") %>% 
+  # Change header names -- add subgroup Ns to headers
+  set_header_labels(
+    var = "Characteristic",
+    mobile_have_f_No = paste0("No Mobile Phone\n(n=", n_outcome["No"], ")"), 
+    mobile_have_f_Yes = paste0("Mobile Phone\n(n=", n_outcome["Yes"], ")")
+  ) %>%  
+  # Bold column headers
+  bold(part = "header") %>% 
+  # To figure out the values for i (rows), it's easiest to open table_1 in the
+  # viewer window and use the row numbers on the left-hand side to get the row
+  # number for the variable we want to add a footnote to.
+  footnote(
+    i = c(63, 77, 116, 127), j = 1,
+    value = as_paragraph(c(
+      "Have data plan was only asked of participants who reported having a mobile phone.",
+      "Percentages sum to >100% because participants could select more than one response option.",
+      "Percentages sum to >100% because participants could select more than one response option.",
+      "Among participants who reported managing any issues with smartphone app."
+    )),
+    # Must add this line or you will get a subscript out of bounds error.
+    ref_symbols = c("1", "2", "3", "4")
+  ) %>% 
+  my_ft_theme()
+```
+
 
 # 📝Load Word template for officer
 
@@ -449,7 +1362,22 @@ table_1_ft <- flextable(table_1) %>%
 doc <- read_docx("template_descriptive_analysis.docx") %>%
   body_replace_text_at_bkm("date", as.character(Sys.Date())) %>% 
   body_replace_text_at_bkm("n_baseline", as.character(nrow(v1))) %>% 
-  body_replace_flextable_at_bkm("table_baseline_characteristics", table_1_ft) 
+  body_replace_flextable_at_bkm("table_baseline_characteristics", table_1_ft) %>% 
+  body_replace_img_at_bkm(
+    "fig_app_health_issue", 
+    external_img("fig_app_health_issue.jpeg", width = 7, height = 4)
+  ) %>% 
+  body_replace_img_at_bkm(
+    "fig_app_issues_total", 
+    external_img("fig_app_issues_total.jpeg", width = 7, height = 4)
+  ) %>% 
+  body_replace_img_at_bkm(
+    "fig_app_issues_total_zero", 
+    external_img("fig_app_issues_total_zero.jpeg", width = 7, height = 4)
+  ) %>% 
+  body_replace_flextable_at_bkm("table_internet_by_phone", table_internet_by_phone_ft) %>% 
+  body_replace_flextable_at_bkm("table_sm_by_phone", table_sm_by_phone_ft) %>% 
+  body_replace_flextable_at_bkm("table_1_by_phone", table_1_by_phone_ft)
 ```
 
 
@@ -458,87 +1386,19 @@ doc <- read_docx("template_descriptive_analysis.docx") %>%
 ```{r}
 print(
   doc,
-  "Smartphone Table Updates.docx"
+  paste0("Smartphone Table Updates ", Sys.Date(), ".docx")
 )
 ```
 
 
-# Last minute updates
-
-2022-01-03, from Jordan Neil 
-
-Brad, sorry to ask this again as you provided it for Jillian’s paper, but for this manuscript can you:
-1. Provide Mdn and IQR for: Lifetime months homeless and Lifetime years in jail?
-2. Create a category that reports participants number of issues managed by a smartphone app? i.e., we currently have it broken down by issue, but could you also provide how many managed 2 issues, 3 issues, 4 issues, etc.?
-
-```{r}
-var <- quo(lifetime_homeless)
-v1 %>% 
-  filter(!is.na({{ var }})) %>% 
-  summarise(
-    var = !!quo_name(var),
-    median = median({{ var }}),
-    iqr = IQR({{ var }})
-  ) %>% 
-  mean_format("median (iqr)", digits = 1) %>% 
-  select(var, formatted_stats)
-```
-
-```{r}
-summary(v1$lifetime_homeless)
-```
 
 
-```{r}
-var <- quo(lifetime_jail)
-v1 %>% 
-  filter(!is.na({{ var }})) %>% 
-  summarise(
-    var = !!quo_name(var),
-    median = median({{ var }}),
-    iqr = IQR({{ var }})
-  ) %>% 
-  mean_format("median (iqr)", digits = 1) %>% 
-  select(var, formatted_stats)
-```
-
-```{r}
-summary(v1$lifetime_jail)
-```
 
 
-Number of issues managed
-
-```{r}
-class(v1$app_issues_sleep) <- "double"
-```
 
 
-```{r}
-v1 %>% 
-  select(id, app_use_f, starts_with("app_issues")) %>% 
-  filter(app_use_f == "Yes") %>% 
-  select(-ends_with("_f")) %>% 
-  mutate(
-    # Drop the haven labeled class so we can add them up
-    across(
-      starts_with("app_issues"),
-      function(x) {
-        class(x) <- "double"
-        x
-      }
-    )
-  ) %>% 
-  rowwise() %>% 
-  mutate(
-    app_issues_total = sum(c_across(app_issues_food:app_issues_other)),
-    app_issues_total_f = factor(app_issues_total, 1:9, 1:9)
-  ) %>% 
-  ungroup() %>% 
-  freq_table(app_issues_total_f) %>% 
-  freq_format("n (percent)", digits = 1) %>% 
-  select(var, cat, formatted_stats)
-```
+
+
 
 
 

@@ -6,7 +6,13 @@ date: "2021-08-03 <br> Updated: `r Sys.Date()`"
 
 # ⭐️Overview
 
-This file we important and clean data needed for the Link2Care smartphone app paper (still waiting on the title).
+2022-12-11
+
+Originally, this R project was on Dropbox. On 2022-12-11, we moved it over to OneDrive at "L2C Teams/Abstract and Manuscripts/l2c_paper_smartphone_app". We also modified the file paths below.
+
+2021-08-03
+
+In this file, we important and clean data needed for the Link2Care smartphone app paper (still waiting on the title).
 
 2021-07-14, Jordan Neil:
 Paper examining prevalence and perceived utility of mHealth tech among RIHA
@@ -27,20 +33,22 @@ library(readr)
 ```
 
 
-# 🌎Connect to UTH server 
-
-```{bash eval=FALSE}
-# Make sure you are connected to the VPN
-open 'smb://islgpcifs.uthouston.edu/sph_research/'
-```
-
-
 # 📥Import data 
 
 The group is only interested in baseline for now. Therefore, I'm importing the QDS visit 1 data only.
 
 ```{r}
-v1 <- read_sav("/Volumes/sph_research/Link2Care/Participant Data/SPSS Data/raw_data/v1_data.SAV")
+v1 <- read_sav("../../Participant Data/SPSS Data/raw_data/v1_data.SAV")
+```
+
+```{r}
+dim(v1) # 442 733
+```
+
+Originally, the data we used for this analysis included only 324 rows and 733 columns. We will remove new rows to make the data match.
+
+```{r}
+v1 <- slice(v1, 1:324)
 ```
 
 ```{r}
@@ -231,24 +239,39 @@ v1 <- v1 %>%
   )
 ```
 
+2022-01-03, from Jordan Neil 
+
+Brad, sorry to ask this again as you provided it for Jillian’s paper, but for this manuscript can you create a category that reports participants number of issues managed by a smartphone app? i.e., we currently have it broken down by issue, but could you also provide how many managed 2 issues, 3 issues, 4 issues, etc.?
+
+NOTE: Person 2296 has a yes for app_issues_other, but NA for app_use. We will not count this (i.e., set to NA).
+
+```{r}
+v1 <- v1 %>%
+  rowwise() %>% 
+  mutate(
+    app_issues_total = sum(c_across(app_issues_food:app_issues_other)),
+    app_issues_total = if_else(is.na(app_use), NA_real_, app_issues_total),
+    app_issues_total_f = factor(app_issues_total, 1:9, 1:9),
+    # We are also making a version of this variable that includes zero issues 
+    # managed.
+    app_issues_total_zero = if_else(app_use == 0, 0, app_issues_total),
+    app_issues_total_zero_f = factor(app_issues_total_zero, 0:9, 0:9)
+  ) %>% 
+  ungroup()
+```
+
 
 # Export analysis data
 
-Export the analysis data as an SPSS data file for Michael and upload it to Kiteworks and the U drive.
+Export the analysis data as an SPSS data file for Michael and upload it to Kiteworks.
 
 We also need to export and rds file to use for analysis in R. Otherwise, the factors are lost.
 
 ```{r}
-write_sav(
-  v1, 
-  "/Volumes/sph_research/Link2Care/Statistical Projects/Montgomery - Smartphone/v1_clean.sav"
-)
+write_sav(v1, "data/v1_clean.sav")
 ```
 
 ```{r}
-write_rds(
-  v1, 
-  "/Volumes/sph_research/Link2Care/Statistical Projects/Montgomery - Smartphone/v1_clean.rds"
-)
+write_rds(v1, "data/v1_clean.rds")
 ```
 
